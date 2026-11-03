@@ -1,0 +1,12 @@
+{
+  // Must match the name of your Worker in the Cloudflare dashboard.
+  "name": "dashboard-upland",
+  "main": "worker.js",
+  "compatibility_date": "2026-08-24",
+  "compatibility_flags": ["nodejs_compat"],
+  "keep_vars": true,
+  "assets": {
+    "directory": "./public",
+    "run_worker_first": ["/api/*"]
+  }
+}
