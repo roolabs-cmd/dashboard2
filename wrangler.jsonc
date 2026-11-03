@@ -8,5 +8,13 @@
   "assets": {
     "directory": "./public",
     "run_worker_first": ["/api/*"]
+  },
+  "vars": {
+    "BRIEF_NAME": "Andrew",
+    "DASHBOARD_PASSCODE": "12345",
+    "GOOGLE_CLIENT_ID": "422933562296-0cci821f5m2savv9vjgf9722vueqcb5n.apps.googleusercontent.com",
+    "NEWS_FOCUS": "cyber security, politics, fun news, and anything important",
+    "SITE_URL": "https://dashboard-upland.andrewmmiri.workers.dev",
+    "SUPABASE_URL": "https://xevfobbncpqgrzfbnvcd.supabase.co"
   }
 }
