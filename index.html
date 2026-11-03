@@ -1,0 +1,297 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Dashboard</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#1a1613;--card:#26201b;--text:#f1e9df;--muted:#a09386;--accent:#f0a24b}
+*{box-sizing:border-box;margin:0}
+html,body{height:100%}
+body{background:var(--bg);color:var(--text);font-family:"Outfit","Helvetica Neue",Arial,sans-serif;-webkit-tap-highlight-color:transparent}
+button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
+a{color:inherit;text-decoration:none}
+.view{display:none;flex-direction:column;gap:14px;height:100%;max-width:640px;margin:0 auto;padding:clamp(14px,3vw,24px)}
+.view.on{display:flex}
+
+/* top bar */
+.top{display:flex;align-items:baseline;gap:12px;padding:0 6px}
+.time{font-size:clamp(52px,11vw,76px);font-weight:300;letter-spacing:-.03em;color:var(--accent);line-height:1}
+.time small{font-size:.32em;letter-spacing:0;margin-left:4px;color:var(--muted)}
+.date{font-size:clamp(15px,2.8vw,20px);color:var(--muted);flex:1}
+.reload{width:40px;height:40px;border-radius:50%;background:var(--card);align-self:center;display:grid;place-items:center}
+.reload svg,.back svg{width:20px;height:20px;stroke:var(--muted);fill:none;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round}
+
+/* home weather card */
+.wcard{display:block;background:var(--card);border-radius:30px;padding:14px 18px 12px}
+.row{display:flex;align-items:center;gap:12px}
+.icon{width:clamp(64px,15vw,92px);flex:none}
+.now{flex:1}
+.cond{color:var(--muted);font-size:clamp(15px,2.6vw,19px)}
+.temp{font-size:clamp(40px,9vw,60px);font-weight:300;letter-spacing:-.02em;line-height:1.05}
+.hl{text-align:right;color:var(--muted);font-size:clamp(14px,2.5vw,18px);line-height:1.5}
+.hl b{color:var(--text);font-weight:500}
+.bars{display:flex;align-items:flex-end;gap:5px;margin-top:10px}
+.bars i{flex:1;background:var(--accent);border-radius:99px;min-height:4px}
+.mini{height:34px}.big{height:90px}
+.hours{display:flex;gap:5px;margin-top:6px;font-size:12px;color:var(--muted)}
+.hours span{flex:1;text-align:center}
+
+.brief{background:var(--accent);color:#1a1613;border-radius:99px;padding:14px 18px;text-align:center;font-size:clamp(15px,2.8vw,18px);font-weight:500}
+.tiles{flex:1;display:grid;grid-template-columns:1fr 1fr;grid-template-rows:1fr 1fr;gap:12px;min-height:0}
+.tile{background:var(--card);border-radius:34px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px}
+.tile svg{width:clamp(40px,9vw,60px);height:clamp(40px,9vw,60px);stroke:var(--text);fill:none;stroke-width:1.5;stroke-linecap:round;stroke-linejoin:round}
+.tile span{font-size:clamp(14px,2.6vw,18px);color:var(--muted)}
+
+/* weather page */
+.head{display:flex;align-items:center;gap:10px;padding:0 4px}
+.back{width:40px;height:40px;border-radius:50%;background:var(--card);display:grid;place-items:center}
+.place{font-size:clamp(18px,3.4vw,24px);font-weight:500}
+.hero{background:var(--card);border-radius:30px;padding:18px}
+.hero .icon{width:clamp(90px,22vw,130px)}
+.hero .temp{font-size:clamp(64px,15vw,96px)}
+.stats{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-top:14px}
+.stat{background:var(--bg);border-radius:22px;padding:10px;text-align:center}
+.stat small{display:block;color:var(--muted);font-size:13px}
+.stat b{font-size:clamp(22px,5vw,30px);font-weight:400}
+.panel{background:var(--card);border-radius:30px;padding:16px 18px}
+.cap{color:var(--muted);font-size:13px}
+.duo{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.info{background:var(--card);border-radius:30px;padding:16px 18px}
+.info .v{font-size:clamp(34px,8vw,52px);font-weight:300;color:var(--accent);line-height:1.1;margin-top:4px}
+.info .l{color:var(--muted);font-size:clamp(14px,2.6vw,17px)}
+.foot{color:var(--muted);font-size:12px;text-align:center;margin-top:auto}
+
+/* weather icons */
+.ico{width:100%;height:auto;overflow:visible}
+.line{fill:none;stroke:var(--text);stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.accent{fill:none;stroke:var(--accent);stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.cloud{animation:drift 7s ease-in-out infinite alternate}
+.sun{transform-origin:center;transform-box:fill-box;animation:spin 40s linear infinite}
+.drop{animation:fall 1.8s linear infinite;opacity:0}
+.drop:nth-of-type(2){animation-delay:.6s}.drop:nth-of-type(3){animation-delay:1.2s}
+@keyframes drift{from{transform:translateX(-2px)}to{transform:translateX(3px)}}
+@keyframes spin{to{transform:rotate(360deg)}}
+@keyframes fall{0%{transform:translateY(-4px);opacity:0}25%{opacity:1}100%{transform:translateY(10px);opacity:0}}
+@media (prefers-reduced-motion:reduce){.cloud,.sun,.drop{animation:none}.drop{opacity:1}}
+/* calendar */
+[hidden]{display:none!important}
+.cpanel{display:flex;flex-direction:column;gap:12px;flex:1;min-height:0}
+.ibtn{width:40px;height:40px;border-radius:50%;background:var(--card);display:grid;place-items:center;flex:none}
+.ibtn svg{width:20px;height:20px;stroke:var(--muted);fill:none;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round}
+.head .sp{flex:1}
+.busy{opacity:.5}
+.dow{display:grid;grid-template-columns:repeat(7,1fr);text-align:center;color:var(--muted);font-size:13px}
+.mgrid{flex:1;min-height:0;display:grid;grid-template-columns:repeat(7,1fr);grid-template-rows:repeat(6,1fr);gap:5px}
+.cell{background:var(--card);border-radius:16px;display:flex;flex-direction:column;align-items:center;justify-content:space-between;padding:6px 2px;min-height:0}
+.cell b{font-weight:400;font-size:clamp(13px,3vw,18px);padding:0 7px;border-radius:99px;line-height:1.5}
+.cell.out{opacity:.35}
+.cell.today b{background:var(--accent);color:#1a1613;font-weight:500}
+.dots{display:flex;gap:3px;height:7px}
+.dots i,.ev>i,.srow i{width:7px;height:7px;border-radius:50%;flex:none}
+.dlist{flex:1;overflow:auto;display:flex;flex-direction:column;gap:10px}
+.ev{display:flex;gap:12px;align-items:flex-start;text-align:left;background:var(--card);border-radius:22px;padding:14px 16px}
+.ev>i{margin-top:8px;width:10px;height:10px}
+.et{font-size:clamp(16px,3vw,20px)}
+.ev .cap{margin-top:2px}.notes{white-space:pre-line;opacity:.8}
+.fields{overflow:auto;display:flex;flex-direction:column;gap:10px;flex:1}
+.fields input,.fields select,.fields textarea{background:var(--card);color:var(--text);border:0;border-radius:18px;padding:13px 16px;font:inherit;font-size:16px;color-scheme:dark;width:100%}
+.two{display:grid;grid-template-columns:1fr auto;gap:10px}
+.chk{display:flex;align-items:center;gap:10px;color:var(--muted);padding:0 6px}
+.chk input{width:20px;height:20px;accent-color:var(--accent)}
+.del{color:#e07a6a;padding:10px;text-align:center}
+.over{position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:5;display:flex}
+.sidep{width:min(80vw,320px);background:var(--card);padding:22px 18px;display:flex;flex-direction:column;gap:12px;overflow:auto}
+.srow{display:flex;align-items:center;gap:12px;padding:8px 4px;font-size:17px}
+.srow input{width:20px;height:20px;accent-color:var(--accent)}
+.lock{align-items:center;justify-content:center}
+.lockp{background:var(--card);border-radius:30px;padding:24px;width:min(88vw,380px);display:flex;flex-direction:column;gap:14px}
+.lockp input{background:var(--bg);color:var(--text);border:0;border-radius:18px;padding:13px 16px;font:inherit;font-size:16px}
+.toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:var(--accent);color:#1a1613;padding:10px 18px;border-radius:99px;z-index:9;max-width:90vw;font-size:15px}
+/* brief */
+a.brief{display:block}
+.bcard{flex:1;overflow:auto}
+.btext{font-size:clamp(17px,3.4vw,22px);line-height:1.6;margin:10px 0}
+.btext p+p{margin-top:12px}
+/* todo */
+.ptitle{display:flex;align-items:center;gap:6px;font-size:clamp(18px,3.4vw,24px);font-weight:500}
+.ptitle svg{width:18px;height:18px;stroke:var(--muted);fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.task{display:flex;align-items:center;gap:6px;background:var(--card);border-radius:22px;padding:4px 16px 4px 6px;transition:opacity .25s,transform .25s}
+.task.done{opacity:0;transform:translateX(24px)}
+.chk{width:48px;height:48px;flex:none;display:grid;place-items:center}
+.chk i{width:24px;height:24px;border:2px solid var(--muted);border-radius:50%}
+.tbody{flex:1;text-align:left;padding:10px 0;min-width:0}
+.cap.late{color:var(--accent)}
+.pitem{display:block;width:100%;text-align:left;padding:12px 8px;font-size:18px;border-radius:14px}
+.pitem.on{color:var(--accent)}
+.chips{display:flex;gap:8px}
+.chips button{background:var(--card);border-radius:99px;padding:8px 14px;font-size:14px;color:var(--muted)}
+.toast button{margin-left:12px;font-weight:600;text-decoration:underline}
+</style>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="i-cal" viewBox="0 0 48 48"><rect x="7" y="10" width="34" height="31" rx="7"/><path d="M7 20h34M16 6v8M32 6v8"/><circle cx="17" cy="29" r="1.2"/><circle cx="24" cy="29" r="1.2"/><circle cx="31" cy="29" r="1.2"/></symbol>
+  <symbol id="i-todo" viewBox="0 0 48 48"><circle cx="24" cy="24" r="17"/><path d="M16.5 24.5l5 5 10-11"/></symbol>
+  <symbol id="i-music" viewBox="0 0 48 48"><path d="M19 35V11l19-4v24"/><circle cx="14" cy="35" r="5"/><circle cx="33" cy="31" r="5"/></symbol>
+  <symbol id="i-ai" viewBox="0 0 48 48"><path d="M22 8c1 8 4 12 12 13-8 1-11 5-12 13-1-8-4-12-12-13 8-1 11-5 12-13z"/><path d="M37 28c.5 3.5 1.7 5 5 5.5-3.3.5-4.5 2-5 5.5-.5-3.5-1.7-5-5-5.5 3.3-.5 4.5-2 5-5.5z"/></symbol>
+</svg>
+
+<!-- HOME -->
+<main class="view on" id="home">
+  <div class="top">
+    <div class="time" id="time"></div>
+    <div class="date" id="date"></div>
+    <button class="reload" type="button" id="reload" aria-label="Reload">
+      <svg viewBox="0 0 24 24"><path d="M20 12a8 8 0 1 1-2.4-5.7M20 4v4h-4"/></svg>
+    </button>
+  </div>
+  <a class="wcard" href="#weather" aria-label="Open weather">
+    <div class="row">
+      <div class="icon" id="hIcon"></div>
+      <div class="now"><div class="cond" id="hCond">Loading…</div><div class="temp" id="hTemp"></div></div>
+      <div class="hl">High <b id="hHi">–</b><br>Low <b id="hLo">–</b></div>
+    </div>
+    <div class="bars mini" id="hBars"></div>
+  </a>
+  <a class="brief" id="briefPill" href="#brief">Generate morning brief</a>
+  <div class="tiles">
+    <a class="tile" href="#calendar"><svg aria-hidden="true"><use href="#i-cal"/></svg><span>Calendar</span></a>
+    <a class="tile" href="#todo"><svg aria-hidden="true"><use href="#i-todo"/></svg><span>To-do</span></a>
+    <button class="tile" type="button" data-launch="music"><svg aria-hidden="true"><use href="#i-music"/></svg><span>Music</span></button>
+    <button class="tile" type="button" data-launch="ai"><svg aria-hidden="true"><use href="#i-ai"/></svg><span>AI</span></button>
+  </div>
+</main>
+
+<!-- WEATHER PAGE -->
+<main class="view" id="weather">
+  <div class="head">
+    <a class="back" href="#" aria-label="Back"><svg viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7"/></svg></a>
+    <div class="place" id="wPlace"></div>
+  </div>
+  <section class="hero">
+    <div class="row">
+      <div class="icon" id="wIcon"></div>
+      <div class="now"><div class="cond" id="wCond">Loading…</div><div class="temp" id="wTemp"></div></div>
+    </div>
+    <div class="stats">
+      <div class="stat"><small>Low</small><b id="wLo">–</b></div>
+      <div class="stat"><small>Now</small><b id="wNow">–</b></div>
+      <div class="stat"><small>High</small><b id="wHi">–</b></div>
+    </div>
+  </section>
+  <section class="panel">
+    <div class="cap">Chance of rain, next 12 hours</div>
+    <div class="bars big" id="wBars"></div>
+    <div class="hours" id="wHours"></div>
+  </section>
+  <section class="duo">
+    <div class="info"><div class="l">UV index</div><div class="v" id="uv">–</div><div class="l" id="uvL"></div></div>
+    <div class="info"><div class="l">Air quality</div><div class="v" id="aqi">–</div><div class="l" id="aqiL"></div></div>
+  </section>
+  <div class="foot" id="foot"></div>
+</main>
+<!-- CALENDAR -->
+<main class="view" id="calendar">
+  <div class="cpanel" id="cGrid">
+    <div class="head">
+      <a class="back" href="#" aria-label="Back"><svg viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7"/></svg></a>
+      <button class="ibtn" id="cMenu" type="button" aria-label="Calendars"><svg viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h16"/></svg></button>
+      <div class="place" id="cTitle"></div><div class="sp"></div>
+      <button class="ibtn" id="cPrev" type="button" aria-label="Previous month"><svg viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7"/></svg></button>
+      <button class="ibtn" id="cNext" type="button" aria-label="Next month"><svg viewBox="0 0 24 24"><path d="M9 5l7 7-7 7"/></svg></button>
+      <button class="ibtn" id="cAdd" type="button" aria-label="Add event"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></button>
+    </div>
+    <div class="dow"><span>S</span><span>M</span><span>T</span><span>W</span><span>T</span><span>F</span><span>S</span></div>
+    <div class="mgrid" id="mGrid"></div>
+  </div>
+  <div class="cpanel" id="cDay" hidden>
+    <div class="head">
+      <button class="ibtn" id="dBack" type="button" aria-label="Back"><svg viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7"/></svg></button>
+      <div class="place" id="dTitle"></div><div class="sp"></div>
+      <button class="ibtn" id="dAdd" type="button" aria-label="Add event"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></button>
+    </div>
+    <div class="dlist" id="dList"></div>
+  </div>
+  <div class="cpanel" id="cForm" hidden>
+    <div class="head">
+      <button class="ibtn" id="fBack" type="button" aria-label="Back"><svg viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7"/></svg></button>
+      <div class="place" id="fHead">New event</div>
+    </div>
+    <div class="fields">
+      <input id="fTitle" placeholder="Title" autocomplete="off">
+      <select id="fCal"></select>
+      <label class="chk"><input type="checkbox" id="fAll"> All day</label>
+      <div class="two"><input type="date" id="fSd"><input type="time" id="fSt"></div>
+      <div class="two"><input type="date" id="fEd"><input type="time" id="fEt"></div>
+      <input id="fLoc" placeholder="Location" autocomplete="off">
+      <textarea id="fNotes" rows="3" placeholder="Notes"></textarea>
+    </div>
+    <button class="brief" id="fSave" type="button">Save</button>
+    <button class="del" id="fDel" type="button">Delete</button>
+  </div>
+  <div class="over" id="cSide" hidden>
+    <div class="sidep">
+      <div class="place">Calendars</div>
+      <div id="sList"></div>
+      <button class="ibtn" id="sPass" type="button" style="margin-top:auto;width:auto;border-radius:99px;padding:0 16px;color:var(--muted);font-size:14px;background:var(--bg)">Change passcode</button>
+    </div>
+    <div style="flex:1" id="sClose"></div>
+  </div>
+</main>
+<!-- TO-DO -->
+<main class="view" id="todo">
+  <div class="cpanel" id="tListP">
+    <div class="head">
+      <a class="back" href="#" aria-label="Back"><svg viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7"/></svg></a>
+      <button class="ptitle" id="tTitle" type="button"><span id="tName">Tasks</span><svg viewBox="0 0 24 24"><path d="M7 10l5 5 5-5"/></svg></button>
+      <div class="sp"></div>
+      <button class="ibtn" id="tAdd" type="button" aria-label="Add task"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></button>
+    </div>
+    <div class="dlist" id="tList"></div>
+  </div>
+  <div class="cpanel" id="tFormP" hidden>
+    <div class="head">
+      <button class="ibtn" id="tfBack" type="button" aria-label="Back"><svg viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7"/></svg></button>
+      <div class="place" id="tfHead">New task</div>
+    </div>
+    <div class="fields">
+      <input id="tfTitle" placeholder="Task" autocomplete="off">
+      <select id="tfProj"></select>
+      <input type="date" id="tfDue">
+      <div class="chips"><button id="tfToday" type="button">Today</button><button id="tfTomorrow" type="button">Tomorrow</button><button id="tfNone" type="button">No date</button></div>
+      <textarea id="tfNotes" rows="3" placeholder="Notes"></textarea>
+    </div>
+    <button class="brief" id="tfSave" type="button">Save</button>
+    <button class="del" id="tfDel" type="button">Delete</button>
+  </div>
+  <div class="over lock" id="tPick" hidden><div class="lockp"><div class="place">Projects</div><div id="pList"></div></div></div>
+  <div class="toast" id="tSnack" hidden><span id="tSnackT"></span><button id="tUndo" type="button">Undo</button></div>
+</main>
+<!-- MORNING BRIEF -->
+<main class="view" id="brief">
+  <div class="head">
+    <a class="back" href="#" aria-label="Back"><svg viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7"/></svg></a>
+    <div class="place">Morning brief</div><div class="sp"></div>
+    <button class="ibtn" id="bRegen" type="button" aria-label="Regenerate"><svg viewBox="0 0 24 24"><path d="M20 12a8 8 0 1 1-2.4-5.7M20 4v4h-4"/></svg></button>
+  </div>
+  <section class="panel bcard">
+    <div class="cap" id="bDate"></div>
+    <div class="btext" id="bText"></div>
+    <div class="cap" id="bSrc"></div>
+  </section>
+  <button class="brief" id="bTalk" type="button" hidden>Talk</button>
+</main>
+  <div class="over lock" id="cLock" hidden>
+    <div class="lockp"><div id="lockNote">Enter your dashboard passcode</div><input id="lockIn" type="password" autocomplete="off"><button class="brief" id="lockGo" type="button">Unlock</button></div>
+  </div>
+  <div class="toast" id="cMsg" hidden></div>
+<script src="weather.js"></script>
+<script src="calendar.js"></script>
+<script src="brief.js"></script>
+<script src="todo.js"></script>
+<script src="launcher.js"></script>
+</body>
+</html>
