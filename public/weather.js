@@ -140,8 +140,8 @@ tick(); setInterval(tick, 20000);
 // ---------- Pages (#weather = weather page) ----------
 function route() {
   const h = location.hash.slice(1);
-  const page = ["weather", "calendar", "brief", "todo"].includes(h) ? h : "home";
-  ["home", "weather", "calendar", "brief", "todo"].forEach((id) => $(id).classList.toggle("on", id === page));
+  const page = ["weather", "calendar", "brief", "todo", "music"].includes(h) ? h : "home";
+  ["home", "weather", "calendar", "brief", "todo", "music"].forEach((id) => $(id).classList.toggle("on", id === page));
 }
 window.addEventListener("hashchange", route); route();
 

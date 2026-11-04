@@ -4,6 +4,9 @@ import * as brief from "./functions/api/brief.js";
 import * as todoist from "./functions/api/todoist.js";
 import * as gStart from "./functions/api/google/start.js";
 import * as gCallback from "./functions/api/google/callback.js";
+import * as spotify from "./functions/api/spotify.js";
+import * as sStart from "./functions/api/spotify/start.js";
+import * as sCallback from "./functions/api/spotify/callback.js";
 
 // Only /api/* requests reach this Worker; everything else is served from the public folder.
 const routes = {
@@ -12,7 +15,10 @@ const routes = {
   "/api/brief": brief,
   "/api/todoist": todoist,
   "/api/google/start": gStart,
-  "/api/google/callback": gCallback
+  "/api/google/callback": gCallback,
+  "/api/spotify": spotify,
+  "/api/spotify/start": sStart,
+  "/api/spotify/callback": sCallback
 };
 
 export default {

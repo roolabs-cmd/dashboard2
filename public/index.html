@@ -129,6 +129,41 @@ a.brief{display:block}
 .chips{display:flex;gap:8px}
 .chips button{background:var(--card);border-radius:99px;padding:8px 14px;font-size:14px;color:var(--muted)}
 .toast button{margin-left:12px;font-weight:600;text-decoration:underline}
+/* music */
+.mwrap{--peach:#f6c9a8;flex:1;min-height:0;display:flex;gap:14px;justify-content:center;align-items:stretch}
+.mside{display:flex;flex-direction:column;gap:12px;flex:none}
+.rbtn{width:52px;height:52px;border-radius:50%;background:var(--card);display:grid;place-items:center}
+.rbtn svg{width:24px;height:24px;stroke:var(--muted);fill:none;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round}
+.mmain{flex:1;max-width:600px;min-width:0;display:flex;gap:10px;min-height:0}
+.pcard{flex:1;min-width:0;min-height:0;display:flex;flex-direction:column;background:var(--card);border-radius:34px;overflow:hidden}
+.part{flex:1;min-height:100px;background-size:cover;background-position:center}
+.pinfo{text-align:center;padding:14px 16px 0}
+.mtitle{color:var(--peach);font-size:clamp(20px,4vw,28px);line-height:1.2}
+.martist{font-size:clamp(14px,2.6vw,18px);margin-top:2px}
+.ctl{display:flex;justify-content:space-around;align-items:center;padding:8px 14px}
+.ctl button{width:84px;height:64px;display:grid;place-items:center}
+.ctl svg{height:38px;fill:var(--peach)}
+#mPlay svg{height:50px;fill:var(--accent)}
+.progw{padding:10px 16px 18px;cursor:pointer}
+.prog{height:12px;border-radius:99px;background:#f6d6bd;overflow:hidden}
+.prog i{display:block;height:100%;width:0;background:var(--accent)}
+.qstrip{width:clamp(66px,13vw,92px);flex:none;background:var(--card);border-radius:30px;padding:12px 8px;display:flex;flex-direction:column;gap:10px;overflow:auto}
+.qh{display:grid;place-items:center;padding-bottom:2px}
+.qh svg{width:30px;height:30px;stroke:var(--peach);fill:none;stroke-width:1.6;stroke-linecap:round}
+.qt{width:100%;aspect-ratio:1;flex:none;border-radius:12px;background-size:cover;background-position:center}
+.pgrid{padding:22px;overflow:auto;display:grid;grid-template-columns:1fr 1fr;gap:20px;align-content:start}
+.pl{display:flex;flex-direction:column;gap:7px;text-align:left;min-width:0}
+.pl .cv{aspect-ratio:1;border-radius:14px;background-size:cover;background-position:center}
+.pl span{font-size:14px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.lcard{padding:16px 22px 10px;overflow:hidden}
+.ltitle{text-align:center;color:var(--peach);font-size:clamp(18px,3.4vw,24px);font-weight:300}
+.lcover{width:min(52%,240px);aspect-ratio:1;flex:none;margin:14px auto;border-radius:6px;background-size:cover;background-position:center;box-shadow:0 0 44px rgba(240,162,75,.28);cursor:pointer}
+.lsongs{flex:1;overflow:auto;min-height:0}
+.song{display:flex;align-items:center;padding:0 4px 0 12px}
+.sname{flex:1;text-align:left;padding:10px 0;min-width:0}
+.sname div:first-child{color:var(--peach);font-size:clamp(16px,3vw,20px);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.smenu{width:46px;height:46px;display:grid;place-items:center}
+.smenu svg{width:22px;height:22px;stroke:var(--peach);fill:none;stroke-width:1.6;stroke-linecap:round}
 </style>
 </head>
 <body>
@@ -160,8 +195,8 @@ a.brief{display:block}
   <div class="tiles">
     <a class="tile" href="#calendar"><svg aria-hidden="true"><use href="#i-cal"/></svg><span>Calendar</span></a>
     <a class="tile" href="#todo"><svg aria-hidden="true"><use href="#i-todo"/></svg><span>To-do</span></a>
-    <button class="tile" type="button" data-launch="music"><svg aria-hidden="true"><use href="#i-music"/></svg><span>Music</span></button>
-    <button class="tile" type="button" data-launch="ai"><svg aria-hidden="true"><use href="#i-ai"/></svg><span>AI</span></button>
+    <a class="tile" href="#music"><svg aria-hidden="true"><use href="#i-music"/></svg><span>Music</span></a>
+    <button class="tile" type="button"><svg aria-hidden="true"><use href="#i-ai"/></svg><span>AI</span></button>
   </div>
 </main>
 
@@ -270,6 +305,38 @@ a.brief{display:block}
   <div class="over lock" id="tPick" hidden><div class="lockp"><div class="place">Projects</div><div id="pList"></div></div></div>
   <div class="toast" id="tSnack" hidden><span id="tSnackT"></span><button id="tUndo" type="button">Undo</button></div>
 </main>
+<!-- MUSIC -->
+<main class="view" id="music">
+  <div class="mwrap">
+    <div class="mside">
+      <button class="rbtn" id="mBack" type="button" aria-label="Back"></button>
+      <button class="rbtn" id="mSwap" type="button" aria-label="Playlists"></button>
+      <button class="rbtn" id="mDevBtn" type="button" aria-label="Choose a device"></button>
+    </div>
+    <div class="mmain" id="mPlayer">
+      <div class="pcard">
+        <div class="part" id="mArt"></div>
+        <div class="pinfo"><div class="mtitle" id="mTitle">Nothing playing</div><div class="cap martist" id="mArtist"></div></div>
+        <div class="ctl">
+          <button id="mPrev" type="button" aria-label="Previous"><svg viewBox="0 0 48 32"><path d="M24 2L4 16l20 14zM44 2L24 16l20 14z"/></svg></button>
+          <button id="mPlay" type="button" aria-label="Play or pause"></button>
+          <button id="mNext" type="button" aria-label="Next"><svg viewBox="0 0 48 32"><path d="M24 2l20 14-20 14zM4 2l20 14L4 30z"/></svg></button>
+        </div>
+        <div class="progw" id="mProgWrap"><div class="prog"><i id="mFill"></i></div></div>
+      </div>
+      <div class="qstrip" id="mQueue"></div>
+    </div>
+    <div class="mmain" id="mLists" hidden><div class="pcard pgrid" id="mPl"></div></div>
+    <div class="mmain" id="mList" hidden>
+      <div class="pcard lcard">
+        <div class="ltitle" id="lTitle"></div>
+        <div class="lcover" id="lCover"></div>
+        <div class="lsongs" id="lSongs"></div>
+      </div>
+    </div>
+  </div>
+  <div class="over lock" id="mDev" hidden><div class="lockp"><div class="place">Play on</div><div class="cap" id="mDevNote"></div><div id="mDevList"></div></div></div>
+</main>
 <!-- MORNING BRIEF -->
 <main class="view" id="brief">
   <div class="head">
@@ -292,6 +359,6 @@ a.brief{display:block}
 <script src="calendar.js"></script>
 <script src="brief.js"></script>
 <script src="todo.js"></script>
-<script src="launcher.js"></script>
+<script src="music.js"></script>
 </body>
 </html>
