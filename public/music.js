@@ -131,9 +131,17 @@
     const t = fromSdk(s.track_window.current_track);
     M.now = { active: true, playing: !s.paused, progress: s.position, device: "This tablet", track: t };
     M.stamp = Date.now(); renderNow();
-    const next = (s.track_window.next_tracks || []).map(fromSdk);
-    if (next.length) { M.queue = next; M.qFor = t.id; renderQueue(); }
-    else if (t.id !== M.qFor) { M.qFor = t.id; api(A + "queue").then((j) => { M.queue = j.queue; renderQueue(); }).catch(() => {}); }
+    // The SDK only reports a short look-ahead (often one song), so show it instantly and then
+    // fill in the full queue from the Spotify API once per track change.
+    if (t.id !== M.qFor) {
+      M.qFor = t.id;
+      const next = (s.track_window.next_tracks || []).map(fromSdk);
+      if (next.length) { M.queue = next; renderQueue(); }
+      setTimeout(() => {
+        if (M.qFor !== t.id) return; // the song changed again, ignore this stale answer
+        api(A + "queue").then((j) => { if (M.qFor === t.id && j.queue && j.queue.length >= M.queue.length) { M.queue = j.queue; renderQueue(); } }).catch(() => {});
+      }, 700);
+    }
   }
   async function drmOk() {
     try { await navigator.requestMediaKeySystemAccess("com.widevine.alpha", [{ initDataTypes: ["cenc"], audioCapabilities: [{ contentType: 'audio/mp4;codecs="mp4a.40.2"' }] }]); return true; } catch (e) { return false; }
