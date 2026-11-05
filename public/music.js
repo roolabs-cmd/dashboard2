@@ -13,7 +13,8 @@
   const svg = (k) => '<svg viewBox="0 0 24 24" aria-hidden="true">' + ICON[k] + "</svg>";
   const PLAY = '<svg viewBox="0 0 32 40" aria-hidden="true"><path d="M2 2l28 18L2 38z"/></svg>';
   const PAUSE = '<svg viewBox="0 0 32 40" aria-hidden="true"><rect x="3" y="2" width="9" height="36" rx="2"/><rect x="20" y="2" width="9" height="36" rx="2"/></svg>';
-  const M = { now: null, stamp: 0, queue: [], qFor: undefined, lists: null, listsAt: 0, list: null, panel: "mPlayer", poll: null, tick: null, busy: false, errShown: false };
+  const ls = { get: (k) => { try { return localStorage.getItem(k); } catch (e) { return null; } }, set: (k, v) => { try { localStorage.setItem(k, v); } catch (e) {} } };
+  const M = { sdk: null, deviceId: null, local: false, sdkStarted: false, sdkNote: "", preferLocal: ls.get("music-local") === "1", activated: false, now: null, stamp: 0, queue: [], qFor: undefined, lists: null, listsAt: 0, list: null, panel: "mPlayer", poll: null, tick: null, busy: false, errShown: false };
 
   // ----- fake Spotify for offline testing -----
   const mock = (() => {
@@ -78,7 +79,7 @@
     });
   }
   async function pollOnce() {
-    if (M.busy) return; M.busy = true;
+    if (M.busy || M.local) return; M.busy = true;
     try {
       const n = await api(A + "now");
       M.now = n; M.stamp = Date.now(); M.errShown = false; renderNow();
@@ -92,30 +93,77 @@
   const soon = () => setTimeout(pollOnce, 600);
 
   async function ctl(op, extra, body) { try { await post(op, extra, body); soon(); } catch (e) { fail(e); } }
+  const here = () => Boolean(M.local && M.sdk);
   g("mPlay").onclick = () => {
+    if (here()) { M.sdk.togglePlay(); return; }
     if (M.now && M.now.playing) { M.now.progress = curMs(); M.stamp = Date.now(); M.now.playing = false; renderNow(); ctl("pause"); }
     else ctl("play", "", {});
   };
-  g("mNext").onclick = () => ctl("next");
-  g("mPrev").onclick = () => ctl("prev");
+  g("mNext").onclick = () => (here() ? M.sdk.nextTrack() : ctl("next"));
+  g("mPrev").onclick = () => (here() ? M.sdk.previousTrack() : ctl("prev"));
   g("mProgWrap").onclick = (e) => {
     const t = M.now && M.now.track; if (!t) return;
     const r = e.currentTarget.getBoundingClientRect(), ms = Math.floor(Math.max(0, Math.min(1, (e.clientX - r.left) / r.width)) * t.duration);
-    M.now.progress = ms; M.stamp = Date.now(); drawProg(); ctl("seek", "&ms=" + ms);
+    M.now.progress = ms; M.stamp = Date.now(); drawProg();
+    if (here()) M.sdk.seek(ms); else ctl("seek", "&ms=" + ms);
   };
-  async function skipTo(n) { try { for (let i = 0; i < n; i++) { await post("next"); await sleep(200); } soon(); } catch (e) { fail(e); } }
+  async function skipTo(n) { try { for (let i = 0; i < n; i++) { if (here()) await M.sdk.nextTrack(); else await post("next"); await sleep(200); } soon(); } catch (e) { fail(e); } }
+
+  // ----- in-page player (Spotify Web Playback SDK) -----
+  const sized = (imgs) => (imgs || []).slice().sort((a, b) => (a.height || a.width || 0) - (b.height || b.width || 0));
+  const fromSdk = (t) => {
+    const s = sized(t.album && t.album.images), big = s[s.length - 1], mid = s.find((i) => (i.height || i.width || 0) >= 150) || big;
+    return { id: t.id, uri: t.uri, name: t.name, artists: (t.artists || []).map((a) => a.name).join(", "), image: big ? big.url : null, thumb: mid ? mid.url : null, duration: t.duration_ms };
+  };
+  function onSdkState(s) {
+    if (!s || !s.track_window || !s.track_window.current_track) { M.local = false; return; }
+    M.local = true;
+    const t = fromSdk(s.track_window.current_track);
+    M.now = { active: true, playing: !s.paused, progress: s.position, device: "This tablet", track: t };
+    M.stamp = Date.now(); renderNow();
+    const next = (s.track_window.next_tracks || []).map(fromSdk);
+    if (next.length) { M.queue = next; M.qFor = t.id; renderQueue(); }
+    else if (t.id !== M.qFor) { M.qFor = t.id; api(A + "queue").then((j) => { M.queue = j.queue; renderQueue(); }).catch(() => {}); }
+  }
+  async function drmOk() {
+    try { await navigator.requestMediaKeySystemAccess("com.widevine.alpha", [{ initDataTypes: ["cenc"], audioCapabilities: [{ contentType: 'audio/mp4;codecs="mp4a.40.2"' }] }]); return true; } catch (e) { return false; }
+  }
+  async function initSdk() {
+    if (MOCK || M.sdkStarted) return; M.sdkStarted = true;
+    if (!navigator.requestMediaKeySystemAccess || !(await drmOk())) { M.sdkNote = "The in-page player isn't available in this browser, so Spotify plays on another device."; return; }
+    window.onSpotifyWebPlaybackSDKReady = () => {
+      const p = new Spotify.Player({ name: "Wall Dashboard", volume: 0.8, getOAuthToken: (cb) => { api(A + "token").then((j) => cb(j.token)).catch((e) => toast(e.message)); } });
+      p.addListener("ready", (d) => { M.deviceId = d.device_id; M.sdkNote = ""; });
+      p.addListener("not_ready", () => { M.deviceId = null; M.local = false; });
+      p.addListener("player_state_changed", onSdkState);
+      p.addListener("initialization_error", () => { M.sdkNote = "The in-page player couldn't start in this browser."; });
+      p.addListener("authentication_error", () => { M.sdkNote = "Reconnect Spotify once to allow the in-page player (open /api/spotify/start with your passcode)."; toast(M.sdkNote); });
+      p.addListener("account_error", () => { M.sdkNote = "The in-page player needs a full Spotify Premium plan."; toast(M.sdkNote); });
+      p.addListener("playback_error", (e) => toast((e && e.message) || "Playback error"));
+      p.addListener("autoplay_failed", () => toast("Tap the screen once to allow sound."));
+      p.connect().then((ok) => { if (ok) M.sdk = p; });
+    };
+    const s = document.createElement("script"); s.src = "https://sdk.scdn.co/spotify-player.js"; s.async = true;
+    s.onerror = () => { M.sdkNote = "Couldn't load Spotify's player script."; }; document.head.appendChild(s);
+  }
+  // Browsers only allow sound after a tap: unlock it on the first touch of the Music screen.
+  g("music").addEventListener("pointerdown", () => { if (M.sdk && !M.activated) { M.activated = true; try { M.sdk.activateElement(); } catch (e) {} } }, { passive: true });
 
   // ----- devices -----
   async function openDevices(note) {
-    const l = g("mDevList"); l.innerHTML = ""; g("mDevNote").textContent = note || ""; g("mDev").hidden = false;
+    const l = g("mDevList"); l.innerHTML = "";
+    g("mDevNote").textContent = note || (M.deviceId ? "" : M.sdkNote); g("mDev").hidden = false;
+    const item = (label, on, fn) => { const b = document.createElement("button"); b.type = "button"; b.className = "pitem" + (on ? " on" : ""); b.textContent = label; b.onclick = fn; l.appendChild(b); };
+    const move = async (id, local) => {
+      g("mDev").hidden = true; M.preferLocal = local; ls.set("music-local", local ? "1" : "0");
+      try { await post("transfer", "&device_id=" + encodeURIComponent(id)); setTimeout(pollOnce, 900); } catch (e) { toast(e.message); }
+    };
+    if (M.deviceId) item("Play here (this tablet)", M.local, () => { if (M.sdk) M.sdk.activateElement(); move(M.deviceId, true); });
     try {
       const j = await api(A + "devices");
-      if (!j.devices.length) { const p = document.createElement("p"); p.className = "cap"; p.textContent = "No devices found. Open Spotify on your phone or speaker and play something once."; l.appendChild(p); }
-      j.devices.forEach((d) => {
-        const b = document.createElement("button"); b.type = "button"; b.className = "pitem" + (d.active ? " on" : ""); b.textContent = d.name;
-        b.onclick = async () => { g("mDev").hidden = true; try { await post("transfer", "&device_id=" + encodeURIComponent(d.id)); setTimeout(pollOnce, 900); } catch (e) { toast(e.message); } };
-        l.appendChild(b);
-      });
+      const others = j.devices.filter((d) => d.id !== M.deviceId);
+      if (!others.length && !M.deviceId) { const p = document.createElement("p"); p.className = "cap"; p.textContent = "No devices found. Open Spotify on your phone or speaker and play something once."; l.appendChild(p); }
+      others.forEach((d) => item(d.name, d.active && !M.local, () => move(d.id, false)));
     } catch (e) { g("mDevNote").textContent = e.message; }
   }
   g("mDevBtn").onclick = () => openDevices("");
@@ -148,7 +196,7 @@
       b.append(cv, nm); b.onclick = () => openList(p); el.appendChild(b);
     });
   }
-  async function playOn(body) { try { await post("play", "", body); show("mPlayer"); setTimeout(pollOnce, 700); } catch (e) { fail(e); } }
+  async function playOn(body) { try { await post("play", M.preferLocal && M.deviceId ? "&device_id=" + encodeURIComponent(M.deviceId) : "", body); show("mPlayer"); setTimeout(pollOnce, 700); } catch (e) { fail(e); } }
   async function openList(p) {
     M.list = p; g("lTitle").textContent = p.name; art(g("lCover"), p.image, p.name);
     const box = g("lSongs"); box.innerHTML = '<p class="cap">Loading…</p>'; show("mList");
@@ -168,7 +216,7 @@
   }
   g("lCover").onclick = () => { if (M.list) playOn({ context_uri: M.list.uri }); };
 
-  function onRoute() { if (location.hash === "#music") { show("mPlayer"); start(); } else stop(); }
+  function onRoute() { if (location.hash === "#music") { show("mPlayer"); start(); initSdk(); } else stop(); }
   document.addEventListener("visibilitychange", () => { if (!document.hidden && location.hash === "#music") pollOnce(); });
   window.addEventListener("hashchange", onRoute); onRoute();
 })();

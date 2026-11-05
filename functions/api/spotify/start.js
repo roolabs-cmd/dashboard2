@@ -8,7 +8,7 @@ export async function onRequestGet({ request, env }) {
   const p = new URLSearchParams({
     response_type: "code",
     client_id: env.SPOTIFY_CLIENT_ID,
-    scope: "user-read-playback-state user-modify-playback-state user-read-currently-playing playlist-read-private playlist-read-collaborative",
+    scope: "user-read-playback-state user-modify-playback-state user-read-currently-playing playlist-read-private playlist-read-collaborative streaming user-read-email user-read-private",
     redirect_uri: env.SITE_URL + "/api/spotify/callback",
     state: ts + "." + (await sign(env, ts))
   });

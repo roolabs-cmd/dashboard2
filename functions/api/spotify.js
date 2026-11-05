@@ -1,5 +1,5 @@
 import { guard, json } from "../../lib/shared.js";
-import { sp } from "../../lib/spotify.js";
+import { sp, spotifyTokenInfo } from "../../lib/spotify.js";
 
 const URI = /^spotify:(track|playlist|album|episode):[A-Za-z0-9]+$/;
 const ID = /^[A-Za-z0-9]+$/;
@@ -21,6 +21,7 @@ export const onRequest = guard(async (req, env) => {
   const dq = dev ? "?device_id=" + dev : "";
 
   switch (op) {
+    case "token": return json(await spotifyTokenInfo(env));
     case "now": {
       const r = await sp(env, "/me/player?additional_types=track,episode");
       if (r.status === 204 || !r.body || !r.body.device) return json({ active: false });
