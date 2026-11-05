@@ -75,14 +75,14 @@
     M.queue.slice(0, 6).forEach((t, i) => {
       const d = document.createElement("button"); d.type = "button"; d.className = "qt";
       d.setAttribute("aria-label", "Skip to " + t.name); art(d, t.thumb || t.image, t.name);
-      d.onclick = () => skipTo(i + 1); s.appendChild(d);
+      d.onclick = () => skipTo(i); s.appendChild(d);
     });
   }
   async function pollOnce() {
     if (M.busy || M.local) return; M.busy = true;
     try {
       const n = await api(A + "now");
-      M.now = n; M.stamp = Date.now(); M.errShown = false; renderNow();
+      M.now = n; M.ctx = n.context || null; M.stamp = Date.now(); M.errShown = false; renderNow();
       const id = n.track ? n.track.id : null;
       if (id !== M.qFor) { M.qFor = id; api(A + "queue").then((j) => { M.queue = j.queue; renderQueue(); }).catch(() => {}); }
     } catch (e) { if (!M.errShown) { M.errShown = true; toast(e.message); } }
@@ -107,7 +107,17 @@
     M.now.progress = ms; M.stamp = Date.now(); drawProg();
     if (here()) M.sdk.seek(ms); else ctl("seek", "&ms=" + ms);
   };
-  async function skipTo(n) { try { for (let i = 0; i < n; i++) { if (here()) await M.sdk.nextTrack(); else await post("next"); await sleep(200); } soon(); } catch (e) { fail(e); } }
+  // Ignore repeat taps for a moment so one tap can't start the same thing twice.
+  let lastCmd = 0;
+  const lockCmd = () => { const n = Date.now(); if (n - lastCmd < 1500) return true; lastCmd = n; return false; };
+  async function skipTo(i) {
+    const t = M.queue[i]; if (!t || lockCmd()) return;
+    if (M.ctx && t.uri) {
+      try { await post("play", M.local && M.deviceId ? "&device_id=" + encodeURIComponent(M.deviceId) : "", { context_uri: M.ctx, offset: { uri: t.uri } }); soon(); return; }
+      catch (e) { /* not in this playlist (for example a queued song): fall back to skipping */ }
+    }
+    try { for (let k = 0; k <= i; k++) { if (here()) await M.sdk.nextTrack(); else await post("next"); await sleep(300); } soon(); } catch (e) { fail(e); }
+  }
 
   // ----- in-page player (Spotify Web Playback SDK) -----
   const sized = (imgs) => (imgs || []).slice().sort((a, b) => (a.height || a.width || 0) - (b.height || b.width || 0));
@@ -117,7 +127,7 @@
   };
   function onSdkState(s) {
     if (!s || !s.track_window || !s.track_window.current_track) { M.local = false; return; }
-    M.local = true;
+    M.local = true; M.ctx = s.context && s.context.uri ? s.context.uri : null;
     const t = fromSdk(s.track_window.current_track);
     M.now = { active: true, playing: !s.paused, progress: s.position, device: "This tablet", track: t };
     M.stamp = Date.now(); renderNow();
@@ -196,7 +206,7 @@
       b.append(cv, nm); b.onclick = () => openList(p); el.appendChild(b);
     });
   }
-  async function playOn(body) { try { await post("play", M.preferLocal && M.deviceId ? "&device_id=" + encodeURIComponent(M.deviceId) : "", body); show("mPlayer"); setTimeout(pollOnce, 700); } catch (e) { fail(e); } }
+  async function playOn(body) { if (lockCmd()) return; try { await post("play", M.preferLocal && M.deviceId ? "&device_id=" + encodeURIComponent(M.deviceId) : "", body); show("mPlayer"); setTimeout(pollOnce, 700); } catch (e) { fail(e); } }
   async function openList(p) {
     M.list = p; g("lTitle").textContent = p.name; art(g("lCover"), p.image, p.name);
     const box = g("lSongs"); box.innerHTML = '<p class="cap">Loading…</p>'; show("mList");
