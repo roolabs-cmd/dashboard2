@@ -7,6 +7,9 @@ import * as gCallback from "./functions/api/google/callback.js";
 import * as spotify from "./functions/api/spotify.js";
 import * as sStart from "./functions/api/spotify/start.js";
 import * as sCallback from "./functions/api/spotify/callback.js";
+import * as sonos from "./functions/api/sonos.js";
+import * as soStart from "./functions/api/sonos/start.js";
+import * as soCallback from "./functions/api/sonos/callback.js";
 
 // Only /api/* requests reach this Worker; everything else is served from the public folder.
 const routes = {
@@ -18,7 +21,10 @@ const routes = {
   "/api/google/callback": gCallback,
   "/api/spotify": spotify,
   "/api/spotify/start": sStart,
-  "/api/spotify/callback": sCallback
+  "/api/spotify/callback": sCallback,
+  "/api/sonos": sonos,
+  "/api/sonos/start": soStart,
+  "/api/sonos/callback": soCallback
 };
 
 export default {

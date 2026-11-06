@@ -164,6 +164,9 @@ a.brief{display:block}
 .sname div:first-child{color:var(--peach);font-size:clamp(16px,3vw,20px);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .smenu{width:46px;height:46px;display:grid;place-items:center}
 .smenu svg{width:22px;height:22px;stroke:var(--peach);fill:none;stroke-width:1.6;stroke-linecap:round}
+.volw{padding:0 20px 16px}
+#mVol{width:100%;accent-color:var(--accent)}
+.dhead{margin:10px 0 2px;font-size:15px;color:var(--muted)}
 </style>
 </head>
 <body>
@@ -323,6 +326,7 @@ a.brief{display:block}
           <button id="mNext" type="button" aria-label="Next"><svg viewBox="0 0 48 32"><path d="M24 2l20 14-20 14zM4 2l20 14L4 30z"/></svg></button>
         </div>
         <div class="progw" id="mProgWrap"><div class="prog"><i id="mFill"></i></div></div>
+        <div class="volw" id="mVolWrap" hidden><input type="range" id="mVol" min="0" max="100" value="30" aria-label="Sonos volume"></div>
       </div>
       <div class="qstrip" id="mQueue"></div>
     </div>

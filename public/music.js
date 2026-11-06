@@ -14,7 +14,7 @@
   const PLAY = '<svg viewBox="0 0 32 40" aria-hidden="true"><path d="M2 2l28 18L2 38z"/></svg>';
   const PAUSE = '<svg viewBox="0 0 32 40" aria-hidden="true"><rect x="3" y="2" width="9" height="36" rx="2"/><rect x="20" y="2" width="9" height="36" rx="2"/></svg>';
   const ls = { get: (k) => { try { return localStorage.getItem(k); } catch (e) { return null; } }, set: (k, v) => { try { localStorage.setItem(k, v); } catch (e) {} } };
-  const M = { sdk: null, deviceId: null, local: false, sdkStarted: false, sdkNote: "", preferLocal: ls.get("music-local") === "1", activated: false, now: null, stamp: 0, queue: [], qFor: undefined, lists: null, listsAt: 0, list: null, panel: "mPlayer", poll: null, tick: null, busy: false, errShown: false };
+  const M = { src: ls.get("music-src") === "sonos" ? "sonos" : "spotify", group: (() => { try { return JSON.parse(ls.get("music-group")); } catch (e) { return null; } })(), sonosVol: null, sdk: null, deviceId: null, local: false, sdkStarted: false, sdkNote: "", preferLocal: ls.get("music-local") === "1", activated: false, now: null, stamp: 0, queue: [], qFor: undefined, lists: null, listsAt: 0, list: null, panel: "mPlayer", poll: null, tick: null, busy: false, errShown: false };
 
   // ----- fake Spotify for offline testing -----
   const mock = (() => {
@@ -41,8 +41,34 @@
       }
     };
   })();
-  const api = (p, o) => (MOCK ? mock(p, o) : window.dashApi(p, o));
+  const mockSonos = (() => {
+    const songs = ["Sonos Song One", "Sonos Song Two", "Sonos Song Three"].map((n, i) => ({ id: "s" + i, uri: null, name: n, artists: "Living Room Artist", image: null, thumb: null, duration: 210000 }));
+    let cur = 0, playing = true, progress = 20000, vol = 30, last = Date.now();
+    const sync = () => { const n = Date.now(); if (playing) progress += n - last; last = n; };
+    return async (path, opts = {}) => {
+      const q = new URL(path, "http://x").searchParams, op = q.get("op"); sync();
+      switch (op) {
+        case "groups": return { groups: [{ id: "g1", name: "Living Room", household: "h1" }, { id: "g2", name: "Kitchen", household: "h1" }] };
+        case "favorites": return { favorites: ["Chill Mix", "Morning Radio", "Road Trip", "Focus"].map((n, i) => ({ id: "f" + i, name: n, image: null, service: "Spotify" })) };
+        case "now": return { active: true, playing, progress, track: songs[cur], queue: songs.slice(cur + 1, cur + 2), volume: vol };
+        case "toggle": playing = !playing; return { ok: true };
+        case "play": playing = true; return { ok: true };
+        case "pause": playing = false; return { ok: true };
+        case "next": cur = (cur + 1) % songs.length; progress = 0; return { ok: true };
+        case "prev": cur = (cur + songs.length - 1) % songs.length; progress = 0; return { ok: true };
+        case "seek": progress = Number(q.get("ms")) || 0; return { ok: true };
+        case "volume": vol = Number(q.get("v")) || 0; return { ok: true };
+        case "loadfavorite": cur = 0; progress = 0; playing = true; return { ok: true };
+        default: return { ok: true };
+      }
+    };
+  })();
+  const api = (p, o) => (MOCK ? (p.indexOf("/api/sonos") === 0 ? mockSonos(p, o) : mock(p, o)) : window.dashApi(p, o));
   const A = "/api/spotify?op=";
+  const S = "/api/sonos?op=";
+  const isSonos = () => M.src === "sonos" && Boolean(M.group);
+  const gq = () => "&group=" + encodeURIComponent(M.group.id);
+  const sPost = (op, extra) => api(S + op + gq() + (extra || ""), { method: "POST" });
   const post = (op, extra, body) => api(A + op + (extra || ""), { method: "POST", body: body ? JSON.stringify(body) : undefined });
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   function fail(e) {
@@ -65,7 +91,7 @@
   function renderNow() {
     const n = M.now, t = n && n.track;
     g("mTitle").textContent = t ? t.name : "Nothing playing";
-    g("mArtist").textContent = t ? t.artists : "Start Spotify on a device, or tap the speaker button";
+    g("mArtist").textContent = t ? t.artists : isSonos() ? "Nothing playing on " + M.group.name + ". Pick a favorite from the list." : "Start Spotify on a device, or tap the speaker button";
     art(g("mArt"), t && t.image, t ? t.name : "idle");
     g("mPlay").innerHTML = n && n.playing ? PAUSE : PLAY;
     drawProg();
@@ -79,12 +105,13 @@
     });
   }
   async function pollOnce() {
-    if (M.busy || M.local) return; M.busy = true;
+    if (M.busy || (M.local && !isSonos())) return; M.busy = true;
     try {
-      const n = await api(A + "now");
-      M.now = n; M.ctx = n.context || null; M.stamp = Date.now(); M.errShown = false; renderNow();
+      const n = isSonos() ? await api(S + "now" + gq()) : await api(A + "now");
+      M.now = n; M.ctx = n.context || null; if (isSonos()) M.sonosVol = n.volume; M.stamp = Date.now(); M.errShown = false; renderNow();
       const id = n.track ? n.track.id : null;
-      if (id !== M.qFor) { M.qFor = id; api(A + "queue").then((j) => { M.queue = j.queue; renderQueue(); }).catch(() => {}); }
+      if (isSonos()) { M.queue = n.queue || []; renderQueue(); updateVol(); }
+      else if (id !== M.qFor) { M.qFor = id; api(A + "queue").then((j) => { M.queue = j.queue; renderQueue(); }).catch(() => {}); }
     } catch (e) { if (!M.errShown) { M.errShown = true; toast(e.message); } }
     M.busy = false;
   }
@@ -95,28 +122,57 @@
   async function ctl(op, extra, body) { try { await post(op, extra, body); soon(); } catch (e) { fail(e); } }
   const here = () => Boolean(M.local && M.sdk);
   g("mPlay").onclick = () => {
+    if (isSonos()) { sonosToggle(); return; }
     if (here()) { M.sdk.togglePlay(); return; }
     if (M.now && M.now.playing) { M.now.progress = curMs(); M.stamp = Date.now(); M.now.playing = false; renderNow(); ctl("pause"); }
     else ctl("play", "", {});
   };
-  g("mNext").onclick = () => (here() ? M.sdk.nextTrack() : ctl("next"));
-  g("mPrev").onclick = () => (here() ? M.sdk.previousTrack() : ctl("prev"));
+  g("mNext").onclick = () => (isSonos() ? sCtl("next") : here() ? M.sdk.nextTrack() : ctl("next"));
+  g("mPrev").onclick = () => (isSonos() ? sCtl("prev") : here() ? M.sdk.previousTrack() : ctl("prev"));
   g("mProgWrap").onclick = (e) => {
     const t = M.now && M.now.track; if (!t) return;
     const r = e.currentTarget.getBoundingClientRect(), ms = Math.floor(Math.max(0, Math.min(1, (e.clientX - r.left) / r.width)) * t.duration);
     M.now.progress = ms; M.stamp = Date.now(); drawProg();
-    if (here()) M.sdk.seek(ms); else ctl("seek", "&ms=" + ms);
+    if (isSonos()) sCtl("seek", "&ms=" + ms); else if (here()) M.sdk.seek(ms); else ctl("seek", "&ms=" + ms);
   };
   // Ignore repeat taps for a moment so one tap can't start the same thing twice.
   let lastCmd = 0;
   const lockCmd = () => { const n = Date.now(); if (n - lastCmd < 1500) return true; lastCmd = n; return false; };
   async function skipTo(i) {
+    if (isSonos()) { if (!lockCmd()) sCtl("next"); return; }
     const t = M.queue[i]; if (!t || lockCmd()) return;
     if (M.ctx && t.uri) {
       try { await post("play", M.local && M.deviceId ? "&device_id=" + encodeURIComponent(M.deviceId) : "", { context_uri: M.ctx, offset: { uri: t.uri } }); soon(); return; }
       catch (e) { /* not in this playlist (for example a queued song): fall back to skipping */ }
     }
     try { for (let k = 0; k <= i; k++) { if (here()) await M.sdk.nextTrack(); else await post("next"); await sleep(300); } soon(); } catch (e) { fail(e); }
+  }
+
+  // ----- Sonos -----
+  async function sCtl(op, extra) { try { await sPost(op, extra); setTimeout(pollOnce, 500); } catch (e) { toast(e.message); } }
+  function sonosToggle() {
+    const n = M.now; if (n) { n.progress = curMs(); M.stamp = Date.now(); n.playing = !n.playing; renderNow(); }
+    sCtl("toggle");
+  }
+  let volTimer = null, volTouched = 0;
+  function updateVol() {
+    g("mVolWrap").hidden = !isSonos();
+    if (isSonos() && typeof M.sonosVol === "number" && Date.now() - volTouched > 3000) g("mVol").value = M.sonosVol;
+  }
+  g("mVol").addEventListener("input", () => {
+    volTouched = Date.now(); clearTimeout(volTimer);
+    volTimer = setTimeout(() => { if (isSonos()) sCtl("volume", "&v=" + g("mVol").value); }, 350);
+  });
+  function setSource(src, group) {
+    M.src = src; M.group = group || null; ls.set("music-src", src); ls.set("music-group", group ? JSON.stringify(group) : "");
+    if (src === "sonos" && M.sdk && M.local) { try { M.sdk.pause(); } catch (e) {} }
+    M.now = null; M.queue = []; M.qFor = undefined; M.lists = null; M.sonosVol = null;
+    renderNow(); renderQueue(); updateVol(); pollOnce();
+  }
+  async function playFavorite(f) {
+    if (lockCmd()) return;
+    try { await sPost("loadfavorite", "&favorite=" + encodeURIComponent(f.id)); toast("Playing " + f.name + " on " + M.group.name); show("mPlayer"); setTimeout(pollOnce, 1500); }
+    catch (e) { toast(e.message); }
   }
 
   // ----- in-page player (Spotify Web Playback SDK) -----
@@ -127,6 +183,7 @@
   };
   function onSdkState(s) {
     if (!s || !s.track_window || !s.track_window.current_track) { M.local = false; return; }
+    if (isSonos()) return;
     M.local = true; M.ctx = s.context && s.context.uri ? s.context.uri : null;
     const t = fromSdk(s.track_window.current_track);
     M.now = { active: true, playing: !s.paused, progress: s.position, device: "This tablet", track: t };
@@ -171,18 +228,28 @@
   async function openDevices(note) {
     const l = g("mDevList"); l.innerHTML = "";
     g("mDevNote").textContent = note || (M.deviceId ? "" : M.sdkNote); g("mDev").hidden = false;
+    const head = (t) => { const h = document.createElement("div"); h.className = "place dhead"; h.textContent = t; l.appendChild(h); };
     const item = (label, on, fn) => { const b = document.createElement("button"); b.type = "button"; b.className = "pitem" + (on ? " on" : ""); b.textContent = label; b.onclick = fn; l.appendChild(b); };
     const move = async (id, local) => {
       g("mDev").hidden = true; M.preferLocal = local; ls.set("music-local", local ? "1" : "0");
+      if (M.src !== "spotify") setSource("spotify");
       try { await post("transfer", "&device_id=" + encodeURIComponent(id)); setTimeout(pollOnce, 900); } catch (e) { toast(e.message); }
     };
-    if (M.deviceId) item("Play here (this tablet)", M.local, () => { if (M.sdk) M.sdk.activateElement(); move(M.deviceId, true); });
+    head("Spotify");
+    if (M.deviceId) item("Play here (this tablet)", M.local && !isSonos(), () => { if (M.sdk) M.sdk.activateElement(); move(M.deviceId, true); });
     try {
       const j = await api(A + "devices");
       const others = j.devices.filter((d) => d.id !== M.deviceId);
-      if (!others.length && !M.deviceId) { const p = document.createElement("p"); p.className = "cap"; p.textContent = "No devices found. Open Spotify on your phone or speaker and play something once."; l.appendChild(p); }
-      others.forEach((d) => item(d.name, d.active && !M.local, () => move(d.id, false)));
-    } catch (e) { g("mDevNote").textContent = e.message; }
+      if (!others.length && !M.deviceId) { const p = document.createElement("p"); p.className = "cap"; p.textContent = "No Spotify devices found. Open Spotify on your phone or speaker and play something once."; l.appendChild(p); }
+      others.forEach((d) => item(d.name, d.active && !M.local && !isSonos(), () => move(d.id, false)));
+    } catch (e) { g("mDevNote").textContent = g("mDevNote").textContent || e.message; }
+    try {
+      const sj = await api(S + "groups");
+      if (sj.groups.length) {
+        head("Sonos");
+        sj.groups.forEach((gr) => item(gr.name, isSonos() && M.group.id === gr.id, () => { g("mDev").hidden = true; setSource("sonos", { id: gr.id, name: gr.name, household: gr.household }); }));
+      }
+    } catch (e) { /* Sonos not connected yet: just don't list rooms */ }
   }
   g("mDevBtn").onclick = () => openDevices("");
   g("mDev").onclick = (e) => { if (e.target === g("mDev")) g("mDev").hidden = true; };
@@ -202,7 +269,7 @@
   // ----- playlists -----
   async function loadLists() {
     if (M.lists && Date.now() - M.listsAt < 300000) return renderLists();
-    try { M.lists = (await api(A + "playlists")).playlists; M.listsAt = Date.now(); renderLists(); } catch (e) { fail(e); }
+    try { M.lists = isSonos() ? (await api(S + "favorites&household=" + encodeURIComponent(M.group.household))).favorites : (await api(A + "playlists")).playlists; M.listsAt = Date.now(); renderLists(); } catch (e) { fail(e); }
   }
   function renderLists() {
     const el = g("mPl"); el.innerHTML = "";
@@ -211,7 +278,7 @@
       const b = document.createElement("button"); b.type = "button"; b.className = "pl";
       const cv = document.createElement("div"); cv.className = "cv"; art(cv, p.image, p.name);
       const nm = document.createElement("span"); nm.textContent = p.name;
-      b.append(cv, nm); b.onclick = () => openList(p); el.appendChild(b);
+      b.append(cv, nm); b.onclick = () => (isSonos() ? playFavorite(p) : openList(p)); el.appendChild(b);
     });
   }
   async function playOn(body) { if (lockCmd()) return; try { await post("play", M.preferLocal && M.deviceId ? "&device_id=" + encodeURIComponent(M.deviceId) : "", body); show("mPlayer"); setTimeout(pollOnce, 700); } catch (e) { fail(e); } }
@@ -234,7 +301,7 @@
   }
   g("lCover").onclick = () => { if (M.list) playOn({ context_uri: M.list.uri }); };
 
-  function onRoute() { if (location.hash === "#music") { show("mPlayer"); start(); initSdk(); } else stop(); }
+  function onRoute() { if (location.hash === "#music") { show("mPlayer"); updateVol(); start(); initSdk(); } else stop(); }
   document.addEventListener("visibilitychange", () => { if (!document.hidden && location.hash === "#music") pollOnce(); });
   window.addEventListener("hashchange", onRoute); onRoute();
 })();
