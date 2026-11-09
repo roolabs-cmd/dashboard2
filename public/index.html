@@ -144,14 +144,18 @@ a.brief{display:block}
 .ctl button{width:84px;height:64px;display:grid;place-items:center}
 .ctl svg{height:38px;fill:var(--peach)}
 #mPlay svg{height:50px;fill:var(--accent)}
-.progw{padding:10px 16px 18px;cursor:pointer}
-.prog{height:12px;border-radius:99px;background:#f6d6bd;overflow:hidden}
-.prog i{display:block;height:100%;width:0;background:var(--accent)}
+.progw{padding:12px 16px 14px;cursor:pointer}
+.progw.idle{opacity:.45;pointer-events:none}
+.prog{height:8px;border-radius:99px;background:rgba(246,201,168,.22);overflow:hidden}
+.prog i{display:block;height:100%;width:0;background:var(--accent);border-radius:99px}
 .qstrip{width:clamp(66px,13vw,92px);flex:none;background:var(--card);border-radius:30px;padding:12px 8px;display:flex;flex-direction:column;gap:10px;overflow:auto}
 .qh{display:grid;place-items:center;padding-bottom:2px}
 .qh svg{width:30px;height:30px;stroke:var(--peach);fill:none;stroke-width:1.6;stroke-linecap:round}
 .qt{width:100%;aspect-ratio:1;flex:none;border-radius:12px;background-size:cover;background-position:center}
-.pgrid{padding:22px;overflow:auto;display:grid;grid-template-columns:1fr 1fr;gap:20px;align-content:start}
+.pgrid{flex:1;min-height:0;padding:22px;overflow:auto;display:grid;grid-template-columns:1fr 1fr;gap:20px;align-content:start}
+.tabs{display:flex;gap:8px;padding:18px 22px 0}
+.tabs button{background:var(--bg);border-radius:99px;padding:8px 16px;font-size:14px;color:var(--muted)}
+.tabs button.on{background:var(--accent);color:#1a1613}
 .pl{display:flex;flex-direction:column;gap:7px;text-align:left;min-width:0}
 .pl .cv{aspect-ratio:1;border-radius:14px;background-size:cover;background-position:center}
 .pl span{font-size:14px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -164,8 +168,14 @@ a.brief{display:block}
 .sname div:first-child{color:var(--peach);font-size:clamp(16px,3vw,20px);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .smenu{width:46px;height:46px;display:grid;place-items:center}
 .smenu svg{width:22px;height:22px;stroke:var(--peach);fill:none;stroke-width:1.6;stroke-linecap:round}
-.volw{padding:0 20px 16px}
-#mVol{width:100%;accent-color:var(--accent)}
+.volw{display:flex;align-items:center;gap:12px;padding:0 20px 18px}
+.volw svg{width:22px;height:22px;flex:none;stroke:var(--muted);fill:none;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round}
+#mVol{--v:30%;-webkit-appearance:none;appearance:none;flex:1;min-width:0;height:28px;margin:0;background:transparent;outline:0}
+#mVol::-webkit-slider-runnable-track{height:8px;border-radius:99px;background:linear-gradient(to right,var(--accent) var(--v),rgba(246,201,168,.22) var(--v))}
+#mVol::-webkit-slider-thumb{-webkit-appearance:none;width:26px;height:26px;margin-top:-9px;border:0;border-radius:50%;background:var(--peach)}
+#mVol::-moz-range-track{height:8px;border-radius:99px;background:rgba(246,201,168,.22)}
+#mVol::-moz-range-progress{height:8px;border-radius:99px;background:var(--accent)}
+#mVol::-moz-range-thumb{width:26px;height:26px;border:0;border-radius:50%;background:var(--peach)}
 .dhead{margin:10px 0 2px;font-size:15px;color:var(--muted)}
 </style>
 </head>
@@ -326,11 +336,16 @@ a.brief{display:block}
           <button id="mNext" type="button" aria-label="Next"><svg viewBox="0 0 48 32"><path d="M24 2l20 14-20 14zM4 2l20 14L4 30z"/></svg></button>
         </div>
         <div class="progw" id="mProgWrap"><div class="prog"><i id="mFill"></i></div></div>
-        <div class="volw" id="mVolWrap" hidden><input type="range" id="mVol" min="0" max="100" value="30" aria-label="Sonos volume"></div>
+        <div class="volw" id="mVolWrap" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9v6h4l5 4V5L8 9H4z"/><path d="M16 9a4 4 0 0 1 0 6M18.5 6.5a8 8 0 0 1 0 11"/></svg><input type="range" id="mVol" min="0" max="100" value="30" aria-label="Sonos volume"></div>
       </div>
       <div class="qstrip" id="mQueue"></div>
     </div>
-    <div class="mmain" id="mLists" hidden><div class="pcard pgrid" id="mPl"></div></div>
+    <div class="mmain" id="mLists" hidden>
+      <div class="pcard">
+        <div class="tabs" id="mTabs" hidden><button type="button" id="tabSp">Spotify playlists</button><button type="button" id="tabSo">Sonos favorites</button></div>
+        <div class="pgrid" id="mPl"></div>
+      </div>
+    </div>
     <div class="mmain" id="mList" hidden>
       <div class="pcard lcard">
         <div class="ltitle" id="lTitle"></div>

@@ -14,7 +14,7 @@
   const PLAY = '<svg viewBox="0 0 32 40" aria-hidden="true"><path d="M2 2l28 18L2 38z"/></svg>';
   const PAUSE = '<svg viewBox="0 0 32 40" aria-hidden="true"><rect x="3" y="2" width="9" height="36" rx="2"/><rect x="20" y="2" width="9" height="36" rx="2"/></svg>';
   const ls = { get: (k) => { try { return localStorage.getItem(k); } catch (e) { return null; } }, set: (k, v) => { try { localStorage.setItem(k, v); } catch (e) {} } };
-  const M = { src: ls.get("music-src") === "sonos" ? "sonos" : "spotify", group: (() => { try { return JSON.parse(ls.get("music-group")); } catch (e) { return null; } })(), sonosVol: null, sdk: null, deviceId: null, local: false, sdkStarted: false, sdkNote: "", preferLocal: ls.get("music-local") === "1", activated: false, now: null, stamp: 0, queue: [], qFor: undefined, lists: null, listsAt: 0, list: null, panel: "mPlayer", poll: null, tick: null, busy: false, errShown: false };
+  const M = { src: ls.get("music-src") === "sonos" ? "sonos" : "spotify", group: (() => { try { return JSON.parse(ls.get("music-group")); } catch (e) { return null; } })(), sonosVol: null, sdk: null, deviceId: null, local: false, sdkStarted: false, sdkNote: "", preferLocal: ls.get("music-local") === "1", activated: false, now: null, stamp: 0, queue: [], qFor: undefined, lists: null, listsAt: 0, list: null, panel: "mPlayer", poll: null, tick: null, busy: false, errShown: false, sonosDev: null, sonosDevAt: 0, spDevices: [], listMode: ls.get("music-listmode") === "favorites" ? "favorites" : "spotify", listsKey: "", tag: 0 };
 
   // ----- fake Spotify for offline testing -----
   const mock = (() => {
@@ -27,11 +27,11 @@
       const q = new URL(path, "http://x").searchParams, op = q.get("op"), b = opts.body ? JSON.parse(opts.body) : {};
       sync();
       switch (op) {
-        case "now": return { active: true, playing, progress, device: "Demo speaker", track: songs[cur] };
+        case "now": return { active: true, playing, progress, device: "Demo speaker", deviceId: "d1", track: songs[cur] };
         case "queue": return { queue: songs.slice(cur + 1, cur + 7) };
         case "playlists": return { playlists: lists };
         case "playlist": return { tracks: songs.slice(0, 5) };
-        case "devices": return { devices: [{ id: "d1", name: "Demo speaker", type: "Speaker", active: true }, { id: "d2", name: "Demo phone", type: "Smartphone", active: false }] };
+        case "devices": return { devices: [{ id: "d1", name: "Demo speaker", type: "Speaker", active: true }, { id: "d2", name: "Demo phone", type: "Smartphone", active: false }, { id: "d3", name: "Living Room", type: "Speaker", active: false }, { id: "d4", name: "Kitchen", type: "Speaker", active: false }] };
         case "play": if (b.offset && b.offset.uri) cur = Math.max(0, songs.findIndex((s) => s.uri === b.offset.uri)); if (b.context_uri) progress = 0; playing = true; return { ok: true };
         case "pause": playing = false; return { ok: true };
         case "next": cur = (cur + 1) % songs.length; progress = 0; playing = true; return { ok: true };
@@ -72,8 +72,86 @@
   const post = (op, extra, body) => api(A + op + (extra || ""), { method: "POST", body: body ? JSON.stringify(body) : undefined });
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   function fail(e) {
-    if (/No active Spotify device/.test(e.message)) openDevices(e.message); else toast(e.message);
+    if (!isSonos() && /No active Spotify device/.test(e.message)) openDevices(e.message); else toast(e.message);
   }
+
+  // ----- Sonos + Spotify together -----
+  // Sonos mode still browses with Spotify: playlists, songs, the queue and album covers come from Spotify,
+  // and playback is sent to the Sonos room as a Spotify Connect device (Spotify lists Sonos rooms by name).
+  const norm = (s) => String(s || "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+  const sameTrack = (a, b) => { const x = norm(a), y = norm(b); return Boolean(x && y && (x === y || x.includes(y) || y.includes(x))); };
+  const nameMatch = (a, b) => Boolean(norm(a)) && (norm(a) === norm(b) || norm(a) === norm(String(b || "").split("+")[0]));
+  const overrides = () => { try { return JSON.parse(ls.get("music-sonos-dev")) || {}; } catch (e) { return {}; } };
+  const setOverride = (gid, name) => { const o = overrides(); o[gid] = name; ls.set("music-sonos-dev", JSON.stringify(o)); };
+  function matchDevice(devices, grp) {
+    const want = overrides()[grp.id], full = norm(grp.name);
+    return (want && devices.find((d) => d.name === want)) || devices.find((d) => nameMatch(d.name, grp.name)) ||
+      devices.find((d) => { const n = norm(d.name); return Boolean(n) && full.includes(n); }) || null;
+  }
+  // The Spotify device that is this Sonos room (cached for 30 seconds unless fresh is true).
+  async function findSonosDev(fresh) {
+    const grp = M.group;
+    if (!isSonos()) return null;
+    if (!fresh && M.sonosDevAt && Date.now() - M.sonosDevAt < 30000) return M.sonosDev;
+    try {
+      const list = ((await api(A + "devices")).devices || []).filter((d) => d.id !== M.deviceId);
+      if (M.group !== grp) return null;
+      M.spDevices = list; M.sonosDev = matchDevice(list, grp); M.sonosDevAt = Date.now();
+    } catch (e) { if (fresh) throw e; M.sonosDevAt = Date.now(); }
+    return M.sonosDev;
+  }
+  async function needSonosDev() {
+    if (!M.group) throw new Error("Pick a Sonos room first");
+    const d = await findSonosDev(true);
+    if (!d) throw new Error("Spotify can't see " + M.group.name + " yet. Open Spotify on your phone, play a song on " + M.group.name + " once, then try again. If it still fails, tap the speaker button and pick it there.");
+    return d;
+  }
+  // Plays a Spotify playlist/song on the Sonos room. If the room isn't the active Spotify device yet, wake it first.
+  // Fallback when Spotify can't see the room: a whole playlist can still play if it is saved in My Sonos (a Sonos Favorite) under the same name.
+  const normU = (s) => String(s || "").toLowerCase().replace(/[^a-z0-9\u00c0-\uffff]+/g, " ").trim();
+  async function savedFavorite(p) {
+    if (!p || !M.group) return null;
+    if (!M.favs || Date.now() - (M.favsAt || 0) > 300000) { M.favs = (await api(S + "favorites&household=" + encodeURIComponent(M.group.household))).favorites || []; M.favsAt = Date.now(); }
+    const n = normU(p.name), fs = M.favs.filter((f) => !f.service || /spotify/i.test(f.service));
+    return fs.find((f) => normU(f.name) === n) || fs.find((f) => n && (normU(f.name).includes(n) || n.includes(normU(f.name)))) || null;
+  }
+  async function playOnSonos(body) {
+    let d = null, why = null;
+    try { d = await needSonosDev(); } catch (e) { why = e; }
+    if (!d) {
+      const whole = !body.offset && !body.uris;
+      let f = null;
+      if (whole) { try { f = await savedFavorite(M.list); } catch (e) { f = null; } }
+      if (f) { await sPost("loadfavorite", "&favorite=" + encodeURIComponent(f.id)); toast('Playing "' + f.name + '" on ' + M.group.name + " from My Sonos"); return; }
+      throw new Error(whole
+        ? why.message + ' Or save "' + (M.list ? M.list.name : "this playlist") + '" to My Sonos in the Sonos app, and it will play from here without that.'
+        : "Playing a single song on " + M.group.name + " needs Spotify to see it. " + why.message);
+    }
+    const q = "&device_id=" + encodeURIComponent(d.id);
+    try { await post("play", q, body); }
+    catch (e) { await post("transfer", q + "&play=0"); await sleep(1000); await post("play", q, body); }
+    M.sonosDev = d; M.sonosDevAt = Date.now();
+  }
+  // Album art for songs Sonos reports without a usable picture, looked up on Spotify once per song.
+  const covers = {};
+  function withCover(t) {
+    if (!t || !t.name || !t.artists || (t.image && /^https:\/\//.test(t.image))) return t;
+    const key = norm(t.name + " " + t.artists), c = covers[key];
+    if (c && c !== "wait") { t.image = c.image; t.thumb = c.thumb || c.image; }
+    else if (c === undefined) {
+      covers[key] = "wait";
+      api(A + "cover&name=" + encodeURIComponent(t.name) + "&artist=" + encodeURIComponent(t.artists))
+        .then((j) => { covers[key] = j && j.image ? j : false; }, () => { covers[key] = false; })
+        .then(applyCovers);
+    }
+    return t;
+  }
+  function applyCovers() {
+    if (!isSonos() || !M.now) return;
+    withCover(M.now.track); M.queue.forEach(withCover); renderNow(); renderQueue();
+  }
+  const viaSp = () => Boolean(M.now && M.now.viaSpotify);                                           // Spotify is what's playing on the Sonos room
+  const sx = () => (isSonos() && M.sonosDev ? "&device_id=" + encodeURIComponent(M.sonosDev.id) : "");   // aims Spotify commands at the room
 
   // ----- artwork -----
   const hue = (s) => { let h = 0; for (const c of String(s)) h = (h * 31 + c.charCodeAt(0)) % 360; return h; };
@@ -91,9 +169,10 @@
   function renderNow() {
     const n = M.now, t = n && n.track;
     g("mTitle").textContent = t ? t.name : "Nothing playing";
-    g("mArtist").textContent = t ? t.artists : isSonos() ? "Nothing playing on " + M.group.name + ". Pick a favorite from the list." : "Start Spotify on a device, or tap the speaker button";
+    g("mArtist").textContent = t ? t.artists : isSonos() ? "Nothing playing on " + M.group.name + ". Pick a playlist from the list." : "Start Spotify on a device, or tap the speaker button";
     art(g("mArt"), t && t.image, t ? t.name : "idle");
     g("mPlay").innerHTML = n && n.playing ? PAUSE : PLAY;
+    g("mProgWrap").classList.toggle("idle", !(t && t.duration));
     drawProg();
   }
   function renderQueue() {
@@ -106,14 +185,20 @@
   }
   async function pollOnce() {
     if (M.busy || (M.local && !isSonos())) return; M.busy = true;
+    const tag = M.tag;   // changes when the source or room changes, so an old answer can't overwrite the new screen
     try {
-      const n = isSonos() ? await api(S + "now" + gq()) : await api(A + "now");
-      M.now = n; M.ctx = n.context || null; if (isSonos()) M.sonosVol = n.volume; M.stamp = Date.now(); M.errShown = false; renderNow();
-      const id = n.track ? n.track.id : null;
-      if (isSonos()) { M.queue = n.queue || []; renderQueue(); updateVol(); }
-      else if (id !== M.qFor) { M.qFor = id; api(A + "queue").then((j) => { M.queue = j.queue; renderQueue(); }).catch(() => {}); }
-    } catch (e) { if (!M.errShown) { M.errShown = true; toast(e.message); } }
-    M.busy = false;
+      const n = isSonos() ? await sonosNow() : await api(A + "now");
+      if (tag !== M.tag) return;
+      M.now = n; M.ctx = n.context || null; M.stamp = Date.now(); M.errShown = false;
+      if (isSonos()) M.sonosVol = n.volume;
+      renderNow();
+      if (isSonos()) updateVol();
+      if (!isSonos() || n.viaSpotify) {
+        const id = n.track ? n.track.id : null;
+        if (id !== M.qFor) { M.qFor = id; api(A + "queue").then((j) => { if (tag === M.tag) { M.queue = j.queue; renderQueue(); } }).catch(() => {}); }
+      } else { M.queue = n.queue || []; M.qFor = undefined; renderQueue(); }
+    } catch (e) { if (tag === M.tag && !M.errShown) { M.errShown = true; toast(e.message); } }
+    finally { M.busy = false; }
   }
   function start() { stop(); pollOnce(); M.poll = setInterval(() => { if (!document.hidden) pollOnce(); }, 5000); M.tick = setInterval(drawProg, 500); }
   function stop() { clearInterval(M.poll); clearInterval(M.tick); }
@@ -121,52 +206,68 @@
 
   async function ctl(op, extra, body) { try { await post(op, extra, body); soon(); } catch (e) { fail(e); } }
   const here = () => Boolean(M.local && M.sdk);
+  // In Sonos mode, commands go through Spotify while Spotify is what the room is playing (sx() aims them at the room),
+  // and through Sonos for everything else (favorites, radio, line-in).
   g("mPlay").onclick = () => {
-    if (isSonos()) { sonosToggle(); return; }
-    if (here()) { M.sdk.togglePlay(); return; }
-    if (M.now && M.now.playing) { M.now.progress = curMs(); M.stamp = Date.now(); M.now.playing = false; renderNow(); ctl("pause"); }
-    else ctl("play", "", {});
+    if (isSonos() && !viaSp()) { sonosToggle(); return; }
+    if (!isSonos() && here()) { M.sdk.togglePlay(); return; }
+    if (M.now && M.now.playing) { M.now.progress = curMs(); M.stamp = Date.now(); M.now.playing = false; renderNow(); ctl("pause", sx()); }
+    else ctl("play", sx(), {});
   };
-  g("mNext").onclick = () => (isSonos() ? sCtl("next") : here() ? M.sdk.nextTrack() : ctl("next"));
-  g("mPrev").onclick = () => (isSonos() ? sCtl("prev") : here() ? M.sdk.previousTrack() : ctl("prev"));
+  g("mNext").onclick = () => (isSonos() ? (viaSp() ? ctl("next", sx()) : sCtl("next")) : here() ? M.sdk.nextTrack() : ctl("next"));
+  g("mPrev").onclick = () => (isSonos() ? (viaSp() ? ctl("prev", sx()) : sCtl("prev")) : here() ? M.sdk.previousTrack() : ctl("prev"));
   g("mProgWrap").onclick = (e) => {
-    const t = M.now && M.now.track; if (!t) return;
+    const t = M.now && M.now.track; if (!t || !t.duration) return;
     const r = e.currentTarget.getBoundingClientRect(), ms = Math.floor(Math.max(0, Math.min(1, (e.clientX - r.left) / r.width)) * t.duration);
     M.now.progress = ms; M.stamp = Date.now(); drawProg();
-    if (isSonos()) sCtl("seek", "&ms=" + ms); else if (here()) M.sdk.seek(ms); else ctl("seek", "&ms=" + ms);
+    if (isSonos()) { if (viaSp()) ctl("seek", "&ms=" + ms + sx()); else sCtl("seek", "&ms=" + ms); }
+    else if (here()) M.sdk.seek(ms); else ctl("seek", "&ms=" + ms);
   };
   // Ignore repeat taps for a moment so one tap can't start the same thing twice.
   let lastCmd = 0;
   const lockCmd = () => { const n = Date.now(); if (n - lastCmd < 1500) return true; lastCmd = n; return false; };
   async function skipTo(i) {
-    if (isSonos()) { if (!lockCmd()) sCtl("next"); return; }
+    if (isSonos() && !viaSp()) { if (!lockCmd()) sCtl("next"); return; }
     const t = M.queue[i]; if (!t || lockCmd()) return;
+    const dq = isSonos() ? sx() : M.local && M.deviceId ? "&device_id=" + encodeURIComponent(M.deviceId) : "";
     if (M.ctx && t.uri) {
-      try { await post("play", M.local && M.deviceId ? "&device_id=" + encodeURIComponent(M.deviceId) : "", { context_uri: M.ctx, offset: { uri: t.uri } }); soon(); return; }
+      try { await post("play", dq, { context_uri: M.ctx, offset: { uri: t.uri } }); soon(); return; }
       catch (e) { /* not in this playlist (for example a queued song): fall back to skipping */ }
     }
-    try { for (let k = 0; k <= i; k++) { if (here()) await M.sdk.nextTrack(); else await post("next"); await sleep(300); } soon(); } catch (e) { fail(e); }
+    try { for (let k = 0; k <= i; k++) { if (!isSonos() && here()) await M.sdk.nextTrack(); else await post("next", sx()); await sleep(300); } soon(); } catch (e) { fail(e); }
   }
 
   // ----- Sonos -----
   async function sCtl(op, extra) { try { await sPost(op, extra); setTimeout(pollOnce, 500); } catch (e) { toast(e.message); } }
+  // What the Sonos room is doing. When Spotify is playing on that same room, Spotify's answer is used (it has the
+  // album art, the real queue and the playlist); otherwise Sonos' own answer is used, with art looked up if it has none.
+  async function sonosNow() {
+    const grp = M.group;
+    const [sn, sp, dev] = await Promise.all([api(S + "now" + gq()), api(A + "now").catch(() => null), findSonosDev(false).catch(() => null)]);
+    const onRoom = Boolean(sp && sp.active && sp.track && (dev && sp.deviceId ? sp.deviceId === dev.id : nameMatch(sp.device, grp.name)));
+    if (onRoom && !M.sonosDev && sp.deviceId && M.group === grp) { M.sonosDev = { id: sp.deviceId, name: sp.device }; M.sonosDevAt = Date.now(); }
+    if (onRoom && (!sn.track || sameTrack(sn.track.name, sp.track.name))) return { ...sp, volume: sn.volume, viaSpotify: true };
+    return { ...sn, track: withCover(sn.track), queue: (sn.queue || []).map(withCover), viaSpotify: false };
+  }
   function sonosToggle() {
     const n = M.now; if (n) { n.progress = curMs(); M.stamp = Date.now(); n.playing = !n.playing; renderNow(); }
     sCtl("toggle");
   }
   let volTimer = null, volTouched = 0;
+  const paintVol = () => g("mVol").style.setProperty("--v", g("mVol").value + "%");   // colors the filled part of the slider
   function updateVol() {
     g("mVolWrap").hidden = !isSonos();
     if (isSonos() && typeof M.sonosVol === "number" && Date.now() - volTouched > 3000) g("mVol").value = M.sonosVol;
+    paintVol();
   }
   g("mVol").addEventListener("input", () => {
-    volTouched = Date.now(); clearTimeout(volTimer);
+    paintVol(); volTouched = Date.now(); clearTimeout(volTimer);
     volTimer = setTimeout(() => { if (isSonos()) sCtl("volume", "&v=" + g("mVol").value); }, 350);
   });
   function setSource(src, group) {
     M.src = src; M.group = group || null; ls.set("music-src", src); ls.set("music-group", group ? JSON.stringify(group) : "");
     if (src === "sonos" && M.sdk && M.local) { try { M.sdk.pause(); } catch (e) {} }
-    M.now = null; M.queue = []; M.qFor = undefined; M.lists = null; M.sonosVol = null;
+    M.now = null; M.queue = []; M.qFor = undefined; M.lists = null; M.listsKey = ""; M.sonosVol = null; M.sonosDev = null; M.sonosDevAt = 0; M.favs = null; M.tag++; M.busy = false;
     renderNow(); renderQueue(); updateVol(); pollOnce();
   }
   async function playFavorite(f) {
@@ -250,6 +351,19 @@
         sj.groups.forEach((gr) => item(gr.name, isSonos() && M.group.id === gr.id, () => { g("mDev").hidden = true; setSource("sonos", { id: gr.id, name: gr.name, household: gr.household }); }));
       }
     } catch (e) { /* Sonos not connected yet: just don't list rooms */ }
+    if (isSonos()) {
+      // If Spotify lists this room under a different name, let the person pick which Spotify device it is (remembered).
+      try {
+        if (!(await findSonosDev(true))) {
+          head("Spotify device for " + M.group.name);
+          const n = document.createElement("p"); n.className = "cap"; n.textContent = "Spotify can't match this room by name. Pick it here once."; l.appendChild(n);
+          M.spDevices.forEach((dv) => item(dv.name, false, () => {
+            setOverride(M.group.id, dv.name); M.sonosDevAt = 0; g("mDev").hidden = true;
+            toast("Using " + dv.name + " for " + M.group.name); pollOnce();
+          }));
+        }
+      } catch (e) { /* Spotify not reachable: leave the list as it is */ }
+    }
   }
   g("mDevBtn").onclick = () => openDevices("");
   g("mDev").onclick = (e) => { if (e.target === g("mDev")) g("mDev").hidden = true; };
@@ -267,21 +381,56 @@
   g("mBack").innerHTML = svg("back"); g("mDevBtn").innerHTML = svg("spk");
 
   // ----- playlists -----
+  // In Sonos mode the list can be your Spotify playlists (default) or your Sonos favorites; Spotify mode only has playlists.
+  const favMode = () => isSonos() && M.listMode === "favorites";
+  function drawTabs() {
+    const tabs = g("mTabs"); if (!tabs) return;
+    tabs.hidden = !isSonos();
+    g("tabSp").classList.toggle("on", !favMode()); g("tabSo").classList.toggle("on", favMode());
+  }
+  const tabSp = g("tabSp"), tabSo = g("tabSo");
+  if (tabSp && tabSo) {
+    const pick = (mode) => { M.listMode = mode; ls.set("music-listmode", mode); loadLists(); };
+    tabSp.onclick = () => pick("spotify"); tabSo.onclick = () => pick("favorites");
+  }
   async function loadLists() {
-    if (M.lists && Date.now() - M.listsAt < 300000) return renderLists();
-    try { M.lists = isSonos() ? (await api(S + "favorites&household=" + encodeURIComponent(M.group.household))).favorites : (await api(A + "playlists")).playlists; M.listsAt = Date.now(); renderLists(); } catch (e) { fail(e); }
+    drawTabs();
+    const key = favMode() ? "favorites" : "spotify";
+    if (M.lists && M.listsKey === key && Date.now() - M.listsAt < 300000) return renderLists();
+    try {
+      M.lists = favMode() ? (await api(S + "favorites&household=" + encodeURIComponent(M.group.household))).favorites : (await api(A + "playlists")).playlists;
+      M.listsAt = Date.now(); M.listsKey = key; renderLists();
+    } catch (e) { fail(e); }
   }
   function renderLists() {
     const el = g("mPl"); el.innerHTML = "";
-    if (!M.lists.length) { const p = document.createElement("p"); p.className = "cap"; p.textContent = "No playlists found."; el.appendChild(p); }
+    if (!M.lists.length) { const p = document.createElement("p"); p.className = "cap"; p.textContent = favMode() ? "No Sonos favorites found." : "No playlists found."; el.appendChild(p); }
     M.lists.forEach((p) => {
       const b = document.createElement("button"); b.type = "button"; b.className = "pl";
       const cv = document.createElement("div"); cv.className = "cv"; art(cv, p.image, p.name);
       const nm = document.createElement("span"); nm.textContent = p.name;
-      b.append(cv, nm); b.onclick = () => (isSonos() ? playFavorite(p) : openList(p)); el.appendChild(b);
+      b.append(cv, nm); b.onclick = () => (favMode() ? playFavorite(p) : openList(p)); el.appendChild(b);
     });
   }
-  async function playOn(body) { if (lockCmd()) return; try { await post("play", M.preferLocal && M.deviceId ? "&device_id=" + encodeURIComponent(M.deviceId) : "", body); show("mPlayer"); setTimeout(pollOnce, 700); } catch (e) { fail(e); } }
+  async function playOn(body) {
+    if (lockCmd()) return;
+    try {
+      if (isSonos()) { await playOnSonos(body); setTimeout(pollOnce, 2500); }   // Sonos takes a couple of seconds to start
+      else await post("play", M.preferLocal && M.deviceId ? "&device_id=" + encodeURIComponent(M.deviceId) : "", body);
+      show("mPlayer"); setTimeout(pollOnce, 700);
+    } catch (e) { fail(e); }
+  }
+  // "Add to queue" on Sonos: uses Spotify's queue when Spotify is playing on the room; if nothing is playing, just starts the song.
+  async function sonosQueueAdd(t) {
+    if (!viaSp()) {
+      if (M.now && M.now.track) throw new Error("Spotify isn't playing on " + M.group.name + " right now. Start a Spotify playlist there first, then add songs.");
+      await playOnSonos({ uris: [t.uri] }); setTimeout(pollOnce, 2500);
+      return "Nothing was playing, so I started it on " + M.group.name;
+    }
+    const d = await needSonosDev();
+    await post("queueadd", "&uri=" + encodeURIComponent(t.uri) + "&device_id=" + encodeURIComponent(d.id));
+    return "Added to queue";
+  }
   async function openList(p) {
     M.list = p; g("lTitle").textContent = p.name; art(g("lCover"), p.image, p.name);
     const box = g("lSongs"); box.innerHTML = '<p class="cap">Loading…</p>'; show("mList");
@@ -294,7 +443,12 @@
         const a = document.createElement("div"); a.textContent = t.name; const b = document.createElement("div"); b.className = "cap"; b.textContent = t.artists;
         nm.append(a, b); nm.onclick = () => playOn({ context_uri: p.uri, offset: { uri: t.uri } });
         const mn = document.createElement("button"); mn.type = "button"; mn.className = "smenu"; mn.setAttribute("aria-label", "Add to queue"); mn.innerHTML = svg("menu");
-        mn.onclick = async () => { try { await post("queueadd", "&uri=" + encodeURIComponent(t.uri)); M.qFor = undefined; toast("Added to queue"); } catch (e) { fail(e); } };
+        mn.onclick = async () => {
+          try {
+            const msg = isSonos() ? await sonosQueueAdd(t) : (await post("queueadd", "&uri=" + encodeURIComponent(t.uri)), "Added to queue");
+            M.qFor = undefined; toast(msg);
+          } catch (e) { fail(e); }
+        };
         row.append(nm, mn); box.appendChild(row);
       });
     } catch (e) { box.innerHTML = ""; const m = document.createElement("p"); m.className = "cap"; m.textContent = e.message; box.appendChild(m); }
