@@ -16,6 +16,7 @@
     "SITE_URL": "https://dashboard-upland.andrewmmiri.workers.dev",
     "SONOS_CLIENT_ID": "e16b58ae-48de-4c1e-b4e6-12b00e8e0a17",
     "SPOTIFY_CLIENT_ID": "acc968b3a9034645b0bea0abeaf69220",
+    "SUPABASE_PUBLISHABLE_KEY": "sb_publishable_DD_Qsl5LqFQF0dKBBt4_Jw_dNBXdW4_",
     "SUPABASE_URL": "https://xevfobbncpqgrzfbnvcd.supabase.co"
   }
 }
