@@ -178,13 +178,14 @@ a.brief{display:block}
 #mVol::-moz-range-thumb{width:26px;height:26px;border:0;border-radius:50%;background:var(--peach)}
 .dhead{margin:10px 0 2px;font-size:15px;color:var(--muted)}
 </style>
+<link rel="stylesheet" href="chat.css">
 </head>
 <body>
 <svg width="0" height="0" style="position:absolute" aria-hidden="true">
   <symbol id="i-cal" viewBox="0 0 48 48"><rect x="7" y="10" width="34" height="31" rx="7"/><path d="M7 20h34M16 6v8M32 6v8"/><circle cx="17" cy="29" r="1.2"/><circle cx="24" cy="29" r="1.2"/><circle cx="31" cy="29" r="1.2"/></symbol>
   <symbol id="i-todo" viewBox="0 0 48 48"><circle cx="24" cy="24" r="17"/><path d="M16.5 24.5l5 5 10-11"/></symbol>
   <symbol id="i-music" viewBox="0 0 48 48"><path d="M19 35V11l19-4v24"/><circle cx="14" cy="35" r="5"/><circle cx="33" cy="31" r="5"/></symbol>
-  <symbol id="i-ai" viewBox="0 0 48 48"><path d="M22 8c1 8 4 12 12 13-8 1-11 5-12 13-1-8-4-12-12-13 8-1 11-5 12-13z"/><path d="M37 28c.5 3.5 1.7 5 5 5.5-3.3.5-4.5 2-5 5.5-.5-3.5-1.7-5-5-5.5 3.3-.5 4.5-2 5-5.5z"/></symbol>
+  <symbol id="i-chat" viewBox="0 0 48 48"><path d="M9 8h30a4 4 0 0 1 4 4v18a4 4 0 0 1-4 4H26l-10 8v-8H9a4 4 0 0 1-4-4V12a4 4 0 0 1 4-4z"/><path d="M15 18h18M15 25h11"/></symbol>
 </svg>
 
 <!-- HOME -->
@@ -209,7 +210,7 @@ a.brief{display:block}
     <a class="tile" href="#calendar"><svg aria-hidden="true"><use href="#i-cal"/></svg><span>Calendar</span></a>
     <a class="tile" href="#todo"><svg aria-hidden="true"><use href="#i-todo"/></svg><span>To-do</span></a>
     <a class="tile" href="#music"><svg aria-hidden="true"><use href="#i-music"/></svg><span>Music</span></a>
-    <button class="tile" type="button"><svg aria-hidden="true"><use href="#i-ai"/></svg><span>AI</span></button>
+    <a class="tile" href="#chat"><svg aria-hidden="true"><use href="#i-chat"/></svg><span>Chat</span></a>
   </div>
 </main>
 
@@ -356,6 +357,40 @@ a.brief{display:block}
   </div>
   <div class="over lock" id="mDev" hidden><div class="lockp"><div class="place">Play on</div><div class="cap" id="mDevNote"></div><div id="mDevList"></div></div></div>
 </main>
+<!-- CHAT -->
+<main class="view" id="chat">
+  <section id="chLogin" class="chlogin">
+    <div class="head"><a class="back" href="#" aria-label="Back"><svg viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7"/></svg></a><div class="place">Chat</div></div>
+    <div class="panel">
+      <div class="big">Enter your chat code</div>
+      <input class="chinput" id="chCode" type="password" autocomplete="off" autocapitalize="off" spellcheck="false" aria-label="Chat code">
+      <div class="cherr" id="chErr" role="alert"></div>
+      <button class="brief" id="chGo" type="button">Open chat</button>
+    </div>
+  </section>
+  <section id="chList" hidden>
+    <div class="head"><a class="back" href="#" aria-label="Back"><svg viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7"/></svg></a><div class="place">Chats</div><div class="sp"></div>
+      <button class="ibtn pri" id="chNew" type="button">New</button><button class="ibtn" id="chOutA" type="button">Sign out</button></div>
+    <div class="chitems" id="chItems"></div>
+  </section>
+  <section id="chForm" class="chform" hidden>
+    <div class="head"><button class="back" id="chFBack" type="button" aria-label="Back"><svg viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7"/></svg></button><div class="place" id="chFHead">New chat</div></div>
+    <div class="chphoto"><div class="chav lg" id="chFAv"></div><div class="btns"><button id="chFPick" type="button">Choose photo</button><button id="chFRm" type="button" hidden>Remove</button></div><input type="file" id="chFFile" accept="image/*" hidden></div>
+    <div class="chlab">Name</div><input class="chinput" id="chFName" maxlength="40" autocomplete="off" aria-label="Chat name">
+    <div class="chlab">Guest's code</div><input class="chinput" id="chFCode" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" aria-label="Guest code">
+    <div class="chnote" id="chFNote"></div>
+    <div class="cherr" id="chFErr" role="alert"></div>
+    <button class="chsave" id="chFSave" type="button">Save</button>
+  </section>
+  <section id="chConv" hidden>
+    <div class="head"><button class="back" id="chBack" type="button" aria-label="Back"><svg viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7"/></svg></button>
+      <div class="chav" id="chAv"></div><div class="chtitle"><div class="place" id="chTitle"></div><div class="chstate" id="chState"></div></div><div class="sp"></div>
+      <button class="ibtn" id="chEdit" type="button" hidden>Edit</button><button class="ibtn" id="chOutG" type="button" hidden>Sign out</button></div>
+    <div class="chmsgs" id="chMsgs" aria-live="polite"></div>
+    <form class="chbar" id="chBar"><textarea class="chinput" id="chIn" rows="1" maxlength="2000" placeholder="Message" aria-label="Message"></textarea>
+      <button class="chsend" id="chSend" type="submit" aria-label="Send"><svg viewBox="0 0 24 24"><path d="M4 12l16-8-6 16-3-7z"/></svg></button></form>
+  </section>
+</main>
 <!-- MORNING BRIEF -->
 <main class="view" id="brief">
   <div class="head">
@@ -379,5 +414,6 @@ a.brief{display:block}
 <script src="brief.js"></script>
 <script src="todo.js"></script>
 <script src="music.js"></script>
+<script src="chat.js"></script>
 </body>
 </html>
