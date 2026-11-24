@@ -59,3 +59,8 @@ alter table if exists public.daily_brief    enable row level security;
 -- blocked before they are saved if flagged. The admin turns it on or off per chat. Needs OPENAI_API_KEY in Cloudflare
 -- (Secret); without it, messages are simply not checked.
 alter table public.chats add column if not exists moderate boolean not null default true;
+
+-- Emoji blocking: when block_emoji is on, a guest message containing any emoji in blocked_emojis is rejected before it
+-- is saved. The admin switches it on or off per chat and chooses the emojis in the chat edit screen.
+alter table public.chats add column if not exists block_emoji boolean not null default false;
+alter table public.chats add column if not exists blocked_emojis text[] not null default '{}';

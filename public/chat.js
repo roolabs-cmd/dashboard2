@@ -22,7 +22,12 @@
   let msgs = [], more = false;
   let listTimer = 0, pollTimer = 0, channel = null, client = null, live = false, libPromise = null;
   let fetching = false, again = false, sending = false;
-  let formMode = null, formPhoto, formChat = null;
+  let formMode = null, formPhoto, formChat = null, formEmojis = [];
+  // Emojis offered for blocking. Anything else can be added with the field under the grid.
+  const EMOJI_PRESETS = ["🖕","🍆","🍑","💦","🍌","🌶️","🍒","👅","😈","🔞","👙","🔫","🔪","💣","💀","☠️","🤬","😡","💩","🤮","🍺","🍷","🍻","🥃","🚬","💊","💉","🎰"];
+  const EMOJI_DEFAULT = ["🖕","🍆","🍑","💦","😈","🔞"]; // pre-selected the first time blocking is switched on
+  const EMOJI_RE = /\p{Extended_Pictographic}|\p{Regional_Indicator}/u;
+  const emoKey = (s) => s.replace(/️/g, "");
 
   // ---------- api (does not use the dashboard passcode) ----------
   async function api(op, { method = "GET", body, query } = {}) {
@@ -140,12 +145,43 @@
     $("chFHead").textContent = c ? "Edit chat" : "New chat";
     $("chFName").value = c ? c.name : ""; $("chFCode").value = ""; $("chFErr").textContent = "";
     $("chFMod").checked = c ? c.moderate !== false : true;
+    $("chFEmo").checked = !!(c && c.block_emoji); formEmojis = c ? [...(c.blocked_emojis || [])] : [];
+    $("chFEmoAdd").value = ""; $("chFEmoBox").hidden = !$("chFEmo").checked; drawEmoGrid();
     $("chFCode").placeholder = c ? "Leave empty to keep the current code" : "At least 8 characters";
     $("chFNote").textContent = c ? "Setting a new code signs the guest out until they enter it. Codes can't be shown again, only replaced." : "Give this code to the one person who will chat with you. At least 8 characters.";
     drawFormPhoto(c ? c.photo : null);
     clearInterval(listTimer); listTimer = 0;
     show("chForm");
   }
+  function drawEmoGrid() {
+    const grid = $("chFEmoGrid"); grid.textContent = "";
+    const keys = new Set(EMOJI_PRESETS.map(emoKey));
+    const all = EMOJI_PRESETS.concat(formEmojis.filter((e) => !keys.has(emoKey(e))));
+    for (const e of all) {
+      const on = formEmojis.some((x) => emoKey(x) === emoKey(e));
+      const b = document.createElement("button"); b.type = "button"; b.textContent = e;
+      b.className = on ? "on" : ""; b.setAttribute("aria-pressed", on ? "true" : "false");
+      b.setAttribute("aria-label", (on ? "Blocked: " : "Not blocked: ") + e);
+      b.onclick = () => {
+        formEmojis = on ? formEmojis.filter((x) => emoKey(x) !== emoKey(e)) : formEmojis.concat(e);
+        drawEmoGrid();
+      };
+      grid.appendChild(b);
+    }
+  }
+  $("chFEmo").addEventListener("change", () => {
+    const on = $("chFEmo").checked; $("chFEmoBox").hidden = !on;
+    if (on && !formEmojis.length) formEmojis = [...EMOJI_DEFAULT]; // so switching it on does something straight away
+    drawEmoGrid();
+  });
+  // Anything emoji typed or pasted into the field is added to the blocked set, then the field is cleared.
+  $("chFEmoAdd").addEventListener("input", () => {
+    const v = $("chFEmoAdd").value;
+    const parts = typeof Intl !== "undefined" && Intl.Segmenter ? [...new Intl.Segmenter(undefined, { granularity: "grapheme" }).segment(v)].map((s) => s.segment) : Array.from(v);
+    let added = false;
+    for (const p of parts) if (EMOJI_RE.test(p) && !formEmojis.some((x) => emoKey(x) === emoKey(p))) { formEmojis.push(p); added = true; }
+    if (added || parts.some((p) => EMOJI_RE.test(p))) { $("chFEmoAdd").value = ""; drawEmoGrid(); }
+  });
   function drawFormPhoto(p) {
     avatar($("chFAv"), $("chFName").value || "?", p);
     $("chFRm").hidden = !(typeof p === "string" && p);
@@ -183,10 +219,12 @@
     if (!name) return err("Give the chat a name");
     if (formMode === "create" && [...code.trim()].length < 8) return err("The code needs at least 8 characters");
     if (code && [...code.trim()].length < 8) return err("The code needs at least 8 characters");
+    const emoOn = $("chFEmo").checked;
+    if (emoOn && !formEmojis.length) return err("Pick at least one emoji to block, or switch emoji blocking off");
     $("chFSave").disabled = true; err("");
     try {
       if (formMode === "create") {
-        const body = { name, code, moderate: $("chFMod").checked }; if (formPhoto) body.photo = formPhoto;
+        const body = { name, code, moderate: $("chFMod").checked, block_emoji: emoOn, blocked_emojis: formEmojis }; if (formPhoto) body.photo = formPhoto;
         await api("create", { method: "POST", body });
         toast("Chat created"); showList();
       } else {
@@ -194,6 +232,9 @@
         if (name !== formChat.name) body.name = name;
         if (formPhoto !== undefined) body.photo = formPhoto;
         if ($("chFMod").checked !== (formChat.moderate !== false)) body.moderate = $("chFMod").checked;
+        if (emoOn !== (formChat.block_emoji === true)) body.block_emoji = emoOn;
+        const was = (formChat.blocked_emojis || []).map(emoKey).sort().join("|"), now = formEmojis.map(emoKey).sort().join("|");
+        if (was !== now) body.blocked_emojis = formEmojis;
         if (code) body.code = code;
         if (Object.keys(body).length === 1) { $("chFBack").click(); }
         else {

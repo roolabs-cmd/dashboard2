@@ -13,6 +13,10 @@
 .cherr{color:#ff8a7a;font-size:14px;min-height:18px;padding:0 6px}
 .chmod{display:flex;align-items:center;gap:12px;padding:6px 6px;font-size:16px;cursor:pointer}
 .chmod input{width:22px;height:22px;flex:none;accent-color:var(--accent)}
+.chemo{display:flex;flex-direction:column;gap:12px}
+.chgrid{display:flex;flex-wrap:wrap;gap:8px;padding:0 2px}
+.chgrid button{width:50px;height:50px;border-radius:14px;background:var(--card);border:2px solid transparent;font-size:25px;line-height:1;padding:0;display:grid;place-items:center;cursor:pointer}
+.chgrid button.on{background:#4a2b26;border-color:#ff8a7a}
 .chnote{color:var(--muted);font-size:13px;padding:0 6px;line-height:1.4}
 .chlogin{justify-content:center}
 .chlogin .panel{display:flex;flex-direction:column;gap:12px}

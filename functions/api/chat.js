@@ -6,9 +6,10 @@ import { db, json, safeEqual } from "../../lib/shared.js";
 //   POST ?op=login     {code}                       -> {token, role}   the admin password, or a guest's code
 //   GET  ?op=me                                     -> {role, chat?, realtime}
 //   GET  ?op=chats                                  -> admin only: every chat with its latest message
-//   POST ?op=create    {name, code, photo?, moderate?}        -> admin only
-//   POST ?op=update    {id, name?, photo?, code?, moderate?}  -> admin only: rename, change/remove photo, reset the guest's code,
-//                                                               turn the guest's message moderation on or off
+//   POST ?op=create    {name, code, photo?, moderate?, block_emoji?, blocked_emojis?}        -> admin only
+//   POST ?op=update    {id, name?, photo?, code?, moderate?, block_emoji?, blocked_emojis?}  -> admin only: rename, change/remove
+//                      photo, reset the guest's code, turn message moderation on or off, turn emoji blocking on or off and
+//                      choose which emojis are blocked
 //   GET  ?op=messages  &chat=&before=|after=&limit= -> messages, oldest first
 //   POST ?op=send      {chat, text}                 -> text only; admin and guest
 //
@@ -22,7 +23,7 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const ADMIN_TTL = 14 * 86400, GUEST_TTL = 90 * 86400;     // how long a login lasts, in seconds
 const FAIL_LIMIT = 8, FAIL_WINDOW_MS = 15 * 60 * 1000;    // wrong codes allowed per visitor per window
 const SEND_LIMIT = 30;                                    // messages per person per minute
-const CHAT_COLS = "id,name,photo,rt,code_ver,moderate,created_at";
+const CHAT_COLS = "id,name,photo,rt,code_ver,moderate,block_emoji,blocked_emojis,created_at";
 
 class HttpError extends Error { constructor(status, message) { super(message); this.status = status; } }
 const fail = (status, message) => { throw new HttpError(status, message); };
@@ -120,15 +121,39 @@ function cleanText(v) {
   return t;
 }
 function cleanFlag(v) {
-  if (typeof v !== "boolean") fail(400, "Moderation must be on or off");
+  if (typeof v !== "boolean") fail(400, "That setting must be on or off");
   return v;
 }
+
+// Emoji blocking. Each blocked entry must contain a real emoji (so a letter or digit can't be blocked by mistake).
+const EMOJI_RE = /\p{Extended_Pictographic}|\p{Regional_Indicator}/u;
+const MAX_BLOCKED_EMOJIS = 60;
+// Variation selectors and skin-tone modifiers are dropped, so a blocked 👍 also catches 👍🏽 and "❤️" matches "❤".
+const flatten = (s) => String(s).replace(/[︎️]|\u{1F3FB}|\u{1F3FC}|\u{1F3FD}|\u{1F3FE}|\u{1F3FF}/gu, "");
+function cleanEmojiList(v) {
+  if (!Array.isArray(v) || v.length > MAX_BLOCKED_EMOJIS) fail(400, "Pick up to " + MAX_BLOCKED_EMOJIS + " emojis to block");
+  const out = [];
+  for (const e of v) {
+    if (typeof e !== "string") fail(400, "Those aren't all emojis");
+    const t = e.trim();
+    if (!t || t.length > 24 || !EMOJI_RE.test(t)) fail(400, "Those aren't all emojis");
+    if (!out.includes(t)) out.push(t);
+  }
+  return out;
+}
+const hasBlockedEmoji = (text, list) => {
+  const flat = flatten(text);
+  return (list || []).some((e) => { const f = flatten(e); return f && flat.includes(f); });
+};
 const intParam =(v) => (v !== null && /^\d{1,15}$/.test(v) ? Number(v) : null);
 const admin = (s) => { if (s.role !== "admin") fail(403, "Only the admin can do that"); };
 
 // ---------- shapes sent to the browser ----------
-// "moderate" is only sent to the admin; the guest is never told whether their messages are being checked.
-const chatOut = (c, forAdmin) => ({ id: c.id, name: c.name, photo: c.photo || null, rt: c.rt, created_at: c.created_at, ...(forAdmin ? { moderate: c.moderate !== false } : {}) });
+// The moderation and emoji settings are only sent to the admin; the guest is never told what is being checked.
+const chatOut = (c, forAdmin) => ({
+  id: c.id, name: c.name, photo: c.photo || null, rt: c.rt, created_at: c.created_at,
+  ...(forAdmin ? { moderate: c.moderate !== false, block_emoji: c.block_emoji === true, blocked_emojis: c.blocked_emojis || [] } : {})
+});
 const msgOut = (m) => ({ id: m.id, sender: m.sender, body: m.body, at: m.created_at });
 const rtConfig = (env) => {
   const key = env.SUPABASE_PUBLISHABLE_KEY || env.SUPABASE_ANON_KEY;
@@ -225,7 +250,7 @@ async function handle(req, env, ctx) {
 
     case "chats": {
       admin(s);
-      const { data, error } = await sb.from("chats").select("id,name,photo,rt,moderate,created_at").order("created_at", { ascending: true });
+      const { data, error } = await sb.from("chats").select("id,name,photo,rt,moderate,block_emoji,blocked_emojis,created_at").order("created_at", { ascending: true });
       must(error);
       const rows = await Promise.all(data.map(async (c) => {
         const r = await sb.from("chat_messages").select("id,sender,body,created_at").eq("chat_id", c.id).order("id", { ascending: false }).limit(1);
@@ -242,6 +267,8 @@ async function handle(req, env, ctx) {
       const b = await readBody(req);
       const row = { name: cleanName(b.name), photo: b.photo == null ? null : cleanPhoto(b.photo), rt: randHex(24) };
       if ("moderate" in b) row.moderate = cleanFlag(b.moderate);
+      if ("block_emoji" in b) row.block_emoji = cleanFlag(b.block_emoji);
+      if ("blocked_emojis" in b) row.blocked_emojis = cleanEmojiList(b.blocked_emojis);
       row.code_hash = await codeHash(env, cleanCode(env, b.code));
       const { data, error } = await sb.from("chats").insert(row).select(CHAT_COLS).single();
       if (error && error.code === "23505") fail(409, "That code is already used by another chat");
@@ -257,6 +284,8 @@ async function handle(req, env, ctx) {
       if ("name" in b) patch.name = cleanName(b.name);
       if ("photo" in b) patch.photo = cleanPhoto(b.photo);
       if ("moderate" in b) patch.moderate = cleanFlag(b.moderate);
+      if ("block_emoji" in b) patch.block_emoji = cleanFlag(b.block_emoji);
+      if ("blocked_emojis" in b) patch.blocked_emojis = cleanEmojiList(b.blocked_emojis);
       if (b.code != null && b.code !== "") {
         patch.code_hash = await codeHash(env, cleanCode(env, b.code));
         patch.code_ver = chat.code_ver + 1;   // signs the old guest session out
@@ -293,6 +322,8 @@ async function handle(req, env, ctx) {
         .eq("chat_id", chat.id).eq("sender", s.role).gt("created_at", new Date(Date.now() - 60000).toISOString());
       must(recent.error);
       if ((recent.count || 0) >= SEND_LIMIT) fail(429, "Slow down a little");
+      // Blocked emojis are checked first because it's free and instant; the guest sees the same generic message either way.
+      if (s.role === "guest" && chat.block_emoji === true && hasBlockedEmoji(text, chat.blocked_emojis)) fail(422, "That message can't be sent.");
       // Only the guest's messages are checked, and only when the admin has moderation switched on for this chat.
       // A flagged message is rejected before it is saved, so it never reaches the admin.
       if (s.role === "guest" && chat.moderate !== false && (await isFlagged(env, text))) fail(422, "That message can't be sent.");

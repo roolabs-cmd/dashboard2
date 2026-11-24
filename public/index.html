@@ -379,6 +379,13 @@ a.brief{display:block}
     <div class="chlab">Name</div><input class="chinput" id="chFName" maxlength="40" autocomplete="off" aria-label="Chat name">
     <div class="chlab">Guest's code</div><input class="chinput" id="chFCode" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" aria-label="Guest code">
     <label class="chmod"><input type="checkbox" id="chFMod" checked><span>Block inappropriate messages from this guest</span></label>
+    <label class="chmod"><input type="checkbox" id="chFEmo"><span>Block certain emojis from this guest</span></label>
+    <div class="chemo" id="chFEmoBox" hidden>
+      <div class="chlab">Tap an emoji to block it (red means blocked)</div>
+      <div class="chgrid" id="chFEmoGrid"></div>
+      <div class="chlab">Add other emojis</div>
+      <input class="chinput" id="chFEmoAdd" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="Type or paste an emoji" aria-label="Add emojis to block">
+    </div>
     <div class="chnote" id="chFNote"></div>
     <div class="cherr" id="chFErr" role="alert"></div>
     <button class="chsave" id="chFSave" type="button">Save</button>
