@@ -11,6 +11,8 @@
 .chinput:focus{border-color:var(--accent)}
 .chlab{color:var(--muted);font-size:13px;margin:2px 4px -6px}
 .cherr{color:#ff8a7a;font-size:14px;min-height:18px;padding:0 6px}
+.chmod{display:flex;align-items:center;gap:12px;padding:6px 6px;font-size:16px;cursor:pointer}
+.chmod input{width:22px;height:22px;flex:none;accent-color:var(--accent)}
 .chnote{color:var(--muted);font-size:13px;padding:0 6px;line-height:1.4}
 .chlogin{justify-content:center}
 .chlogin .panel{display:flex;flex-direction:column;gap:12px}

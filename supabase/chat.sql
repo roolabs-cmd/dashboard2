@@ -54,3 +54,8 @@ alter table if exists public.sonos_auth     enable row level security;
 alter table if exists public.calendar_prefs enable row level security;
 alter table if exists public.app_settings   enable row level security;
 alter table if exists public.daily_brief    enable row level security;
+
+-- Message moderation: when on (the default), the guest's messages are checked by OpenAI's moderation model and
+-- blocked before they are saved if flagged. The admin turns it on or off per chat. Needs OPENAI_API_KEY in Cloudflare
+-- (Secret); without it, messages are simply not checked.
+alter table public.chats add column if not exists moderate boolean not null default true;

@@ -139,6 +139,7 @@
     formMode = c ? "edit" : "create"; formChat = c; formPhoto = undefined;
     $("chFHead").textContent = c ? "Edit chat" : "New chat";
     $("chFName").value = c ? c.name : ""; $("chFCode").value = ""; $("chFErr").textContent = "";
+    $("chFMod").checked = c ? c.moderate !== false : true;
     $("chFCode").placeholder = c ? "Leave empty to keep the current code" : "At least 8 characters";
     $("chFNote").textContent = c ? "Setting a new code signs the guest out until they enter it. Codes can't be shown again, only replaced." : "Give this code to the one person who will chat with you. At least 8 characters.";
     drawFormPhoto(c ? c.photo : null);
@@ -185,13 +186,14 @@
     $("chFSave").disabled = true; err("");
     try {
       if (formMode === "create") {
-        const body = { name, code }; if (formPhoto) body.photo = formPhoto;
+        const body = { name, code, moderate: $("chFMod").checked }; if (formPhoto) body.photo = formPhoto;
         await api("create", { method: "POST", body });
         toast("Chat created"); showList();
       } else {
         const body = { id: formChat.id };
         if (name !== formChat.name) body.name = name;
         if (formPhoto !== undefined) body.photo = formPhoto;
+        if ($("chFMod").checked !== (formChat.moderate !== false)) body.moderate = $("chFMod").checked;
         if (code) body.code = code;
         if (Object.keys(body).length === 1) { $("chFBack").click(); }
         else {

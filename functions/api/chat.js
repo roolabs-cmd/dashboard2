@@ -6,8 +6,9 @@ import { db, json, safeEqual } from "../../lib/shared.js";
 //   POST ?op=login     {code}                       -> {token, role}   the admin password, or a guest's code
 //   GET  ?op=me                                     -> {role, chat?, realtime}
 //   GET  ?op=chats                                  -> admin only: every chat with its latest message
-//   POST ?op=create    {name, code, photo?}         -> admin only
-//   POST ?op=update    {id, name?, photo?, code?}   -> admin only: rename, change/remove photo, reset the guest's code
+//   POST ?op=create    {name, code, photo?, moderate?}        -> admin only
+//   POST ?op=update    {id, name?, photo?, code?, moderate?}  -> admin only: rename, change/remove photo, reset the guest's code,
+//                                                               turn the guest's message moderation on or off
 //   GET  ?op=messages  &chat=&before=|after=&limit= -> messages, oldest first
 //   POST ?op=send      {chat, text}                 -> text only; admin and guest
 //
@@ -21,7 +22,7 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const ADMIN_TTL = 14 * 86400, GUEST_TTL = 90 * 86400;     // how long a login lasts, in seconds
 const FAIL_LIMIT = 8, FAIL_WINDOW_MS = 15 * 60 * 1000;    // wrong codes allowed per visitor per window
 const SEND_LIMIT = 30;                                    // messages per person per minute
-const CHAT_COLS = "id,name,photo,rt,code_ver,created_at";
+const CHAT_COLS = "id,name,photo,rt,code_ver,moderate,created_at";
 
 class HttpError extends Error { constructor(status, message) { super(message); this.status = status; } }
 const fail = (status, message) => { throw new HttpError(status, message); };
@@ -118,16 +119,42 @@ function cleanText(v) {
   if (len(t) > TEXT_MAX) fail(400, "That message is too long (2000 characters max)");
   return t;
 }
-const intParam = (v) => (v !== null && /^\d{1,15}$/.test(v) ? Number(v) : null);
+function cleanFlag(v) {
+  if (typeof v !== "boolean") fail(400, "Moderation must be on or off");
+  return v;
+}
+const intParam =(v) => (v !== null && /^\d{1,15}$/.test(v) ? Number(v) : null);
 const admin = (s) => { if (s.role !== "admin") fail(403, "Only the admin can do that"); };
 
 // ---------- shapes sent to the browser ----------
-const chatOut = (c) => ({ id: c.id, name: c.name, photo: c.photo || null, rt: c.rt, created_at: c.created_at });
+// "moderate" is only sent to the admin; the guest is never told whether their messages are being checked.
+const chatOut = (c, forAdmin) => ({ id: c.id, name: c.name, photo: c.photo || null, rt: c.rt, created_at: c.created_at, ...(forAdmin ? { moderate: c.moderate !== false } : {}) });
 const msgOut = (m) => ({ id: m.id, sender: m.sender, body: m.body, at: m.created_at });
 const rtConfig = (env) => {
   const key = env.SUPABASE_PUBLISHABLE_KEY || env.SUPABASE_ANON_KEY;
   return key && env.SUPABASE_URL ? { url: env.SUPABASE_URL, key } : null;
 };
+
+// Asks OpenAI's moderation model whether a message should be blocked. It is free to use and needs OPENAI_API_KEY.
+// If the key isn't set, OpenAI can't be reached, or it answers with an error, the message is allowed through,
+// so a problem with moderation never stops chat from working.
+async function isFlagged(env, text) {
+  if (!env.OPENAI_API_KEY) return false;
+  try {
+    const res = await fetch("https://api.openai.com/v1/moderations", {
+      method: "POST",
+      headers: { authorization: "Bearer " + env.OPENAI_API_KEY, "content-type": "application/json" },
+      body: JSON.stringify({ model: "omni-moderation-latest", input: text }),
+      signal: AbortSignal.timeout(4000)
+    });
+    if (!res.ok) { console.error("moderation http", res.status); return false; }
+    const j = await res.json();
+    return Boolean(j && j.results && j.results[0] && j.results[0].flagged);
+  } catch (e) {
+    console.error("moderation error", e && e.message);
+    return false;
+  }
+}
 
 // Tells whoever has the chat open that something new arrived. It carries no message text; the other side then
 // asks the API for new messages. Best effort only: if it fails, the page's regular check picks the message up.
@@ -198,13 +225,13 @@ async function handle(req, env, ctx) {
 
     case "chats": {
       admin(s);
-      const { data, error } = await sb.from("chats").select("id,name,photo,rt,created_at").order("created_at", { ascending: true });
+      const { data, error } = await sb.from("chats").select("id,name,photo,rt,moderate,created_at").order("created_at", { ascending: true });
       must(error);
       const rows = await Promise.all(data.map(async (c) => {
         const r = await sb.from("chat_messages").select("id,sender,body,created_at").eq("chat_id", c.id).order("id", { ascending: false }).limit(1);
         must(r.error);
         const m = r.data && r.data[0];
-        return { ...chatOut(c), last: m ? { id: m.id, sender: m.sender, body: [...m.body].slice(0, 140).join(""), at: m.created_at } : null };
+        return { ...chatOut(c, true), last: m ? { id: m.id, sender: m.sender, body: [...m.body].slice(0, 140).join(""), at: m.created_at } : null };
       }));
       rows.sort((a, b) => Date.parse((b.last && b.last.at) || b.created_at) - Date.parse((a.last && a.last.at) || a.created_at));
       return json({ chats: rows });
@@ -214,11 +241,12 @@ async function handle(req, env, ctx) {
       admin(s);
       const b = await readBody(req);
       const row = { name: cleanName(b.name), photo: b.photo == null ? null : cleanPhoto(b.photo), rt: randHex(24) };
+      if ("moderate" in b) row.moderate = cleanFlag(b.moderate);
       row.code_hash = await codeHash(env, cleanCode(env, b.code));
       const { data, error } = await sb.from("chats").insert(row).select(CHAT_COLS).single();
       if (error && error.code === "23505") fail(409, "That code is already used by another chat");
       must(error);
-      return json({ chat: chatOut(data) });
+      return json({ chat: chatOut(data, true) });
     }
 
     case "update": {
@@ -228,6 +256,7 @@ async function handle(req, env, ctx) {
       const patch = {};
       if ("name" in b) patch.name = cleanName(b.name);
       if ("photo" in b) patch.photo = cleanPhoto(b.photo);
+      if ("moderate" in b) patch.moderate = cleanFlag(b.moderate);
       if (b.code != null && b.code !== "") {
         patch.code_hash = await codeHash(env, cleanCode(env, b.code));
         patch.code_ver = chat.code_ver + 1;   // signs the old guest session out
@@ -237,7 +266,7 @@ async function handle(req, env, ctx) {
       const { data, error } = await sb.from("chats").update(patch).eq("id", chat.id).select(CHAT_COLS).single();
       if (error && error.code === "23505") fail(409, "That code is already used by another chat");
       must(error);
-      return json({ chat: chatOut(data) });
+      return json({ chat: chatOut(data, true) });
     }
 
     case "messages": {
@@ -264,6 +293,9 @@ async function handle(req, env, ctx) {
         .eq("chat_id", chat.id).eq("sender", s.role).gt("created_at", new Date(Date.now() - 60000).toISOString());
       must(recent.error);
       if ((recent.count || 0) >= SEND_LIMIT) fail(429, "Slow down a little");
+      // Only the guest's messages are checked, and only when the admin has moderation switched on for this chat.
+      // A flagged message is rejected before it is saved, so it never reaches the admin.
+      if (s.role === "guest" && chat.moderate !== false && (await isFlagged(env, text))) fail(422, "That message can't be sent.");
       const { data, error } = await sb.from("chat_messages").insert({ chat_id: chat.id, sender: s.role, body: text }).select("id,sender,body,created_at").single();
       must(error);
       ping(env, ctx, chat.rt);
